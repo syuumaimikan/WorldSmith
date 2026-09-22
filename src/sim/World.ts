@@ -45,6 +45,7 @@ import { DiseaseSystem } from './Disease';
 import { Tectonics } from './Tectonics';
 import { Astronomy } from './Astronomy';
 import { NationSystem } from './Nations';
+import { DiplomacySystem } from './Diplomacy';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
@@ -119,6 +120,7 @@ export class World {
   readonly tectonics: Tectonics;
   readonly astronomy: Astronomy;
   readonly nations: NationSystem;
+  readonly diplomacy: DiplomacySystem;
   readonly disease: DiseaseSystem;
   /**
    * How hard the settlement is rationing, 0 when there is plenty. A famine is
@@ -189,6 +191,7 @@ export class World {
     );
     this.astronomy = new Astronomy(config.seed, this.namer);
     this.nations = new NationSystem(terrain, config.seed, this.namer);
+    this.diplomacy = new DiplomacySystem(config.seed);
     this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
@@ -1697,6 +1700,7 @@ export class World {
     this.storms.update(this, hours);
     this.tectonics.update(this, hours);
     this.nations.update(this, hours);
+    this.diplomacy.update(this, hours);
     this.updateSky();
     this.director.update(this, hours);
     this.disease.update(this, hours);

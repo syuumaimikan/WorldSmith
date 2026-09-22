@@ -133,6 +133,7 @@ export interface SaveData {
   director: Record<string, unknown>;
   tectonics: Record<string, unknown>;
   nations: Record<string, unknown>;
+  diplomacy: Record<string, unknown>;
   disease: Record<string, unknown>;
   volcanoes: SavedVolcano[];
   economy: Record<string, unknown>;
@@ -197,6 +198,7 @@ export function migrate(raw: AnySave): SaveData {
     data.director = data.director ?? {};
     data.tectonics = data.tectonics ?? {};
     data.nations = data.nations ?? {};
+    data.diplomacy = data.diplomacy ?? {};
     data.disease = data.disease ?? {};
     data.volcanoes = data.volcanoes ?? [];
     data.possessed = 0;

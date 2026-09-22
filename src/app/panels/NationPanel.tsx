@@ -12,7 +12,7 @@ interface Props {
   onClose: () => void;
 }
 
-type NationTab = 'us' | 'world';
+type NationTab = 'us' | 'world' | 'wars';
 
 const ALL_LAWS = Object.keys(LAWS) as LawId[];
 
@@ -26,11 +26,14 @@ export function NationPanel({ game, onClose }: Props): JSX.Element {
         tabs={[
           { id: 'us', label: t('nation.tab.us') },
           { id: 'world', label: t('nation.tab.world') },
+          { id: 'wars', label: t('dip.wars') },
         ]}
         active={tab}
         onChange={setTab}
       />
-      {tab === 'us' ? <UsTab game={game} /> : <WorldTab game={game} />}
+      {tab === 'us' && <UsTab game={game} />}
+      {tab === 'world' && <WorldTab game={game} />}
+      {tab === 'wars' && <WarsTab game={game} />}
     </Window>
   );
 }
@@ -170,6 +173,106 @@ function WorldTab({ game }: { game: Game }): JSX.Element {
           </button>
         ))}
     </div>
+  );
+}
+
+function WarsTab({ game }: { game: Game }): JSX.Element {
+  const t = useT();
+  const world = game.world;
+  const dip = world.diplomacy;
+  const mine = world.nations.playerNation;
+
+  return (
+    <>
+      {dip.wars.length === 0 ? (
+        <EmptyNote>{t('dip.noWars')}</EmptyNote>
+      ) : (
+        <div className="list">
+          {dip.wars.map((w) => {
+            const attacker = world.nations.byId(w.attacker);
+            const defender = world.nations.byId(w.defender);
+            const involvesUs = mine && (w.attacker === mine.id || w.defender === mine.id);
+            return (
+              <div key={w.id} className="list-row" style={{ gridTemplateColumns: '1fr 90px' }}>
+                <div>
+                  <div>
+                    {attacker?.name ?? '?'} — {defender?.name ?? '?'}
+                  </div>
+                  <div className="tiny muted">
+                    {t(`wargoal.${w.goal}`)} · {t('dip.since', { day: w.startedDay })} ·{' '}
+                    {t('dip.battles', { count: w.battles })}
+                  </div>
+                  <div className="tiny muted mono">
+                    {t('dip.warScore')} {(w.warScore * 100).toFixed(0)} · {t('dip.exhaustion')}{' '}
+                    {Math.round(w.attackerExhaustion * 100)}/{Math.round(w.defenderExhaustion * 100)}
+                  </div>
+                </div>
+                {involvesUs && <Pill tone="bad">{t('nation.tab.us')}</Pill>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="section-label">{t('dip.armies')}</div>
+      {dip.armies.length === 0 ? (
+        <EmptyNote>—</EmptyNote>
+      ) : (
+        <div className="list">
+          {dip.armies.map((a) => {
+            const owner = world.nations.byId(a.nation);
+            return (
+              <button
+                key={a.id}
+                className="list-row"
+                style={{ gridTemplateColumns: '1fr 80px', textAlign: 'left' }}
+                onClick={() => game.lookAt(a.x, a.z)}
+              >
+                <span className="tiny">
+                  {t('dip.armyLine', {
+                    nation: owner?.name ?? '?',
+                    strength: Math.round(a.strength),
+                    stance: t(`dip.stance.${a.stance}`),
+                  })}
+                </span>
+                <span className="tiny mono muted">
+                  {t('dip.supply')} {Math.round(a.supply * 100)}%
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {mine && (
+        <>
+          <div className="section-label">{t('dip.title')}</div>
+          <div className="list">
+            {world.nations.nations
+              .filter((n) => !n.isPlayer)
+              .map((n) => {
+                const r = dip.relation(mine.id, n.id);
+                return (
+                  <div key={n.id} className="list-row" style={{ gridTemplateColumns: '1fr 110px' }}>
+                    <div>
+                      <div>{n.name}</div>
+                      <div className="tiny muted">
+                        {t('dip.treaty')}: {t(`dip.treaty.${r.treaty}`)}
+                        {r.truceDays > 0 && ` · ${t('dip.truce', { days: Math.round(r.truceDays) })}`}
+                        {r.wars > 0 && ` · ${t('dip.pastWars')} ${r.wars}`}
+                      </div>
+                    </div>
+                    <span className="tiny mono">
+                      {t('dip.opinion')} {r.opinion > 0 ? '+' : ''}
+                      {Math.round(r.opinion)}
+                    </span>
+                  </div>
+                );
+              })}
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

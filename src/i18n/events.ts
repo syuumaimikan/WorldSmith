@@ -60,6 +60,7 @@ const RESOLVERS: Record<string, Record<string, Resolver>> = {
   'ev.promoted': { tier: asTier },
   'ev.discovered': { lore: asLore },
   'ev.revolution': { from: (v) => t(v), to: (v) => t(v) },
+  'ev.warDeclared': { goal: (v) => t(v) },
   'ev.repaired': { name: asBuilding },
   'event.eruption': { name: (v) => v },
 };

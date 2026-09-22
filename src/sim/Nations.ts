@@ -632,6 +632,40 @@ export class NationSystem {
     nation.taxRate += (target - nation.taxRate) * clamp01(days * 0.03);
   }
 
+  /**
+   * Hands land from one nation to another at the point where they meet.
+   *
+   * A peace treaty does not teleport a province across the map: what changes
+   * hands is the ground the winner's army was standing on, which is the
+   * border cells nearest to them.
+   */
+  transferBorderland(from: Nation, to: Nation, cells: number): number {
+    const candidates: { index: number; distance: number }[] = [];
+    for (let i = 0; i < this.claims.length; i++) {
+      if (this.claims[i] !== from.id) continue;
+      const cx = i % CLAIM_CELLS;
+      const cz = Math.floor(i / CLAIM_CELLS);
+      const wx = (cx + 0.5) * this.cellSize;
+      const wz = (cz + 0.5) * this.cellSize;
+      candidates.push({ index: i, distance: Math.hypot(wx - to.x, wz - to.z) });
+    }
+    // Nearest to the taker first, and never the capital itself.
+    candidates.sort((a, b) => a.distance - b.distance);
+    const capital = this.cellIndexAt(from.x, from.z);
+
+    let moved = 0;
+    for (const c of candidates) {
+      if (moved >= cells) break;
+      if (c.index === capital) continue;
+      if (from.territory <= 1) break;
+      this.claims[c.index] = to.id;
+      from.territory--;
+      to.territory++;
+      moved++;
+    }
+    return moved;
+  }
+
   /** The people scatter, and what they held reverts to no one. */
   private dissolve(world: World, nation: Nation): void {
     for (let i = 0; i < this.claims.length; i++) {
