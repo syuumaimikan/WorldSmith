@@ -1,0 +1,683 @@
+/**
+ * The game loop and the bridge between simulation and presentation.
+ *
+ * Simulation advances on a fixed tick independent of frame rate. Speed
+ * multipliers scale simulated time only — the player's own character always
+ * moves in real time, so controlling them stays pleasant while the world around
+ * them races ahead.
+ *
+ * React never drives the render loop. It subscribes to a snapshot published at
+ * a fixed low rate, which keeps a busy HUD from costing frames.
+ */
+
+import { Scene, Vector3 } from 'three';
+import { Renderer, QualityLevel } from '../engine/Renderer';
+import { CameraController, CameraMode } from '../engine/CameraController';
+import { Input, Action } from '../engine/Input';
+import { SkySystem, SkyState } from '../render/Sky';
+import { TerrainRenderer } from '../render/TerrainRenderer';
+import { VegetationRenderer } from '../render/VegetationRenderer';
+import { BuildingRenderer } from '../render/BuildingRenderer';
+import { PileRenderer } from '../render/PileRenderer';
+import { NpcRenderer } from '../render/NpcRenderer';
+import { WildlifeRenderer } from '../render/WildlifeRenderer';
+import { ParticleSystem } from '../render/Particles';
+import { CharacterRig } from '../render/CharacterRig';
+import { characterMaterial, lookFor } from '../render/geometry/character';
+import { PALETTE } from '../render/Palette';
+import { Season, TerrainTint } from '../render/TerrainColors';
+import { World } from '../sim/World';
+import { GameSpeed } from '../sim/Time';
+import { clamp } from '../core/math';
+import { BuildController, PlacementState } from './BuildController';
+import { applyToolWork, findTarget, interact, InteractTarget } from './PlayerActions';
+import { BuildingId } from '../data/buildings';
+import { Overlay, OverlayRenderer } from '../render/OverlayRenderer';
+import { AudioEngine } from '../audio/AudioEngine';
+
+const SIM_TICK = 1 / 15;
+const MAX_TICKS_PER_FRAME = 10;
+const HUD_INTERVAL = 0.1;
+
+export interface GameSettings {
+  quality: QualityLevel;
+  mouseSensitivity: number;
+  invertY: boolean;
+  showTutorial: boolean;
+  autosaveMinutes: number;
+  masterVolume: number;
+}
+
+export const DEFAULT_SETTINGS: GameSettings = {
+  quality: 'high',
+  mouseSensitivity: 1,
+  invertY: false,
+  showTutorial: true,
+  autosaveMinutes: 5,
+  masterVolume: 0.7,
+};
+
+/** Everything the React HUD needs, published at a fixed rate. */
+export interface HudSnapshot {
+  version: number;
+  clock: string;
+  date: string;
+  season: Season;
+  speed: GameSpeed;
+  weather: string;
+  temperature: number;
+  target: InteractTarget;
+  placement: PlacementState | null;
+  cameraMode: CameraMode;
+  fps: number;
+  drawCalls: number;
+  triangles: number;
+  toast: string | null;
+}
+
+export class Game {
+  readonly world: World;
+  readonly scene = new Scene();
+  readonly renderer: Renderer;
+  readonly cameras: CameraController;
+  readonly input: Input;
+  readonly sky: SkySystem;
+  readonly terrainRenderer: TerrainRenderer;
+  readonly vegetation: VegetationRenderer;
+  readonly buildingRenderer: BuildingRenderer;
+  readonly pileRenderer: PileRenderer;
+  readonly npcRenderer: NpcRenderer;
+  readonly wildlifeRenderer: WildlifeRenderer;
+  readonly particles: ParticleSystem;
+  readonly overlays: OverlayRenderer;
+  readonly build: BuildController;
+  readonly audio: AudioEngine;
+
+  settings: GameSettings;
+  /** Set by the UI when a modal panel wants exclusive keyboard input. */
+  uiCapturesInput = false;
+  running = false;
+
+  /** Published for React; mutated in place then version-bumped. */
+  readonly hud: HudSnapshot;
+  onHud: ((snapshot: HudSnapshot) => void) | null = null;
+  onAutosave: (() => void) | null = null;
+
+  private playerRig: CharacterRig;
+  private charMaterial = characterMaterial();
+  private raf = 0;
+  private lastFrame = 0;
+  private simAccumulator = 0;
+  private hudAccumulator = 0;
+  private focusPoint = new Vector3();
+  private wishDir = new Vector3();
+  private camForward = new Vector3();
+  private camRight = new Vector3();
+  private tint: TerrainTint;
+  private hudVersion = 0;
+  private toastText: string | null = null;
+  private toastTimer = 0;
+  private currentTarget: InteractTarget;
+  private smokeTimer = 0;
+  private autosaveTimer = 0;
+  private discoveryTimer = 0;
+  private pickOrigin = new Vector3();
+  private pickDir = new Vector3();
+
+  constructor(world: World, container: HTMLElement, settings: GameSettings = DEFAULT_SETTINGS) {
+    this.world = world;
+    this.settings = settings;
+
+    this.renderer = new Renderer(container);
+    this.renderer.setQuality(settings.quality);
+
+    this.cameras = new CameraController(this.renderer.width / this.renderer.height);
+    this.cameras.setTerrain(world.terrain);
+
+    this.input = new Input();
+    this.input.attach(this.renderer.canvas);
+
+    this.sky = new SkySystem(this.scene, world.config.seed, world.terrain.worldSize);
+
+    const snap = world.time.snapshot();
+    const season = snap.season as Season;
+    this.tint = {
+      season,
+      seasonTempOffset: world.time.seasonalTemperatureOffset(),
+      snowCover: snowCoverFor(season),
+    };
+
+    const cold = world.config.climate === 'cold';
+    this.terrainRenderer = new TerrainRenderer(world.terrain, this.scene, this.tint);
+    this.vegetation = new VegetationRenderer(this.scene, world.terrain, season, cold);
+    this.buildingRenderer = new BuildingRenderer(this.scene, season);
+    this.pileRenderer = new PileRenderer(this.scene);
+    this.npcRenderer = new NpcRenderer(this.scene);
+    this.wildlifeRenderer = new WildlifeRenderer(this.scene);
+    this.particles = new ParticleSystem(this.scene);
+    this.overlays = new OverlayRenderer(this.scene, world);
+    this.build = new BuildController(this.scene, world, season);
+    this.audio = new AudioEngine(settings.masterVolume);
+
+    const look = lookFor(PALETTE.cloak.player, world.config.seed, PALETTE.cloak.playerTrim);
+    this.playerRig = new CharacterRig(look, this.charMaterial);
+    this.scene.add(this.playerRig.root);
+
+    world.player.focusPoint(this.focusPoint);
+    this.cameras.snap(this.focusPoint);
+
+    world.time.onNewSeason.push((s) => this.applySeason(s as Season));
+
+    this.currentTarget = findTarget(world);
+
+    if (import.meta.env.DEV) {
+      // Handy for poking at a running world from the browser console.
+      (window as unknown as { worldsmith?: Game }).worldsmith = this;
+    }
+
+    this.hud = {
+      version: 0,
+      clock: '',
+      date: '',
+      season,
+      speed: world.time.speed,
+      weather: world.weather.label,
+      temperature: 0,
+      target: this.currentTarget,
+      placement: null,
+      cameraMode: 'third',
+      fps: 0,
+      drawCalls: 0,
+      triangles: 0,
+      toast: null,
+    };
+  }
+
+  /** Builds the scene up front so the world is fully populated on first frame. */
+  warmUp(onProgress?: (fraction: number, label: string) => void): void {
+    onProgress?.(0.05, 'Raising the terrain');
+    this.terrainRenderer.buildAll((f) => onProgress?.(0.05 + f * 0.6, 'Raising the terrain'));
+    onProgress?.(0.7, 'Planting the forests');
+    this.vegetation.markDirty();
+    this.vegetation.update(this.world.nodes, this.cameras.camera.position);
+    onProgress?.(0.85, 'Waking the settlers');
+    this.npcRenderer.update(this.world.npcs, this.cameras.camera.position, 0);
+    this.wildlifeRenderer.update(this.world.wildlife, this.cameras.camera.position, 0);
+    this.pileRenderer.update(this.world.piles, this.cameras.camera.position);
+    this.buildingRenderer.update(this.world, this.cameras.camera.position, 0);
+    onProgress?.(1, 'Ready');
+  }
+
+  // ------------------------------------------------------------------ loop
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.lastFrame = performance.now();
+    const loop = (now: number) => {
+      if (!this.running) return;
+      this.raf = requestAnimationFrame(loop);
+      const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
+      this.lastFrame = now;
+      try {
+        this.frame(dt);
+      } catch (err) {
+        // One bad frame should not take the whole game down.
+        console.error('[WorldSmith] frame error', err);
+      }
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  stop(): void {
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+  }
+
+  private frame(dt: number): void {
+    const t0 = performance.now();
+
+    this.handleInput(dt);
+    this.updatePlayer(dt);
+
+    const speed = this.world.time.speed as number;
+    this.simAccumulator += dt * speed;
+    let ticks = 0;
+    while (this.simAccumulator >= SIM_TICK && ticks < MAX_TICKS_PER_FRAME) {
+      this.simAccumulator -= SIM_TICK;
+      ticks++;
+      this.world.simulate(SIM_TICK);
+    }
+    if (this.simAccumulator > SIM_TICK) this.simAccumulator = 0;
+
+    this.updatePresentation(dt);
+
+    this.renderer.render(this.scene, this.cameras.camera, performance.now() - t0);
+    this.input.endFrame();
+
+    this.hudAccumulator += dt;
+    if (this.hudAccumulator >= HUD_INTERVAL) {
+      this.hudAccumulator = 0;
+      this.publishHud();
+    }
+
+    this.autosaveTimer += dt;
+    if (this.settings.autosaveMinutes > 0 && this.autosaveTimer > this.settings.autosaveMinutes * 60) {
+      this.autosaveTimer = 0;
+      this.onAutosave?.();
+    }
+  }
+
+  // ----------------------------------------------------------------- input
+
+  private handleInput(dt: number): void {
+    const input = this.input;
+    const free = !this.uiCapturesInput;
+
+    if (free) {
+      if (input.mouseDown(2)) {
+        const invert = this.settings.invertY ? -1 : 1;
+        this.cameras.rotate(input.deltaX, input.deltaY * invert, this.settings.mouseSensitivity);
+      }
+      if (input.wheel !== 0 && input.overViewport) this.cameras.zoom(input.wheel);
+
+      if (input.wasPressed('cameraMode')) this.cycleCameraMode();
+      if (input.wasPressed('speedUp')) this.cycleSpeed(1);
+      if (input.wasPressed('speedDown')) this.cycleSpeed(-1);
+      if (input.wasPressed('pause')) {
+        this.world.time.speed = this.world.time.speed === 0 ? 1 : 0;
+      }
+      if (input.wasPressed('rotate') && this.build.isPlacing) this.build.rotate();
+      if (input.wasPressed('overlayCycle')) this.overlays.cycle();
+    }
+
+    // Movement relative to the camera's ground heading.
+    this.wishDir.set(0, 0, 0);
+    if (free) {
+      this.cameras.groundForward(this.camForward);
+      this.cameras.groundRight(this.camRight);
+      if (input.isDown('moveForward')) this.wishDir.add(this.camForward);
+      if (input.isDown('moveBack')) this.wishDir.sub(this.camForward);
+      if (input.isDown('moveRight')) this.wishDir.add(this.camRight);
+      if (input.isDown('moveLeft')) this.wishDir.sub(this.camRight);
+    }
+
+    // In build and overview modes the camera pans instead of the player moving.
+    if (this.cameras.mode === 'build' || this.cameras.mode === 'overview') {
+      const panSpeed = this.cameras.distance * 1.1 * dt;
+      if (this.wishDir.lengthSq() > 0) {
+        this.cameras.pan(this.wishDir.x * panSpeed, this.wishDir.z * panSpeed);
+        this.wishDir.set(0, 0, 0);
+      }
+    } else {
+      this.cameras.clearPan();
+    }
+
+    // --- Placement -------------------------------------------------------
+    if (free && this.build.isPlacing) {
+      this.hud.placement = this.build.update(this.cameras.camera, input.ndcX, input.ndcY);
+      if (input.mousePressed(0) && input.overViewport) this.build.beginDrag();
+      if (input.mouseReleased(0)) {
+        const placed = this.build.commit();
+        if (placed > 0) {
+          this.toast(placed === 1 ? 'Blueprint placed' : `${placed} sections marked out`);
+          this.audio.play('place');
+        } else if (!this.build.validNow) {
+          this.toast(this.build.reasonNow || 'Cannot build here');
+        }
+      }
+      if (input.wasPressed('cancel') || input.mousePressed(1)) {
+        this.build.select(null);
+        this.hud.placement = null;
+      }
+    } else if (this.hud.placement) {
+      this.hud.placement = null;
+    }
+
+    // --- World interaction ------------------------------------------------
+    if (free && !this.build.isPlacing) {
+      this.currentTarget = findTarget(this.world);
+
+      if (input.wasPressed('interact')) {
+        const result = interact(this.world, this.currentTarget);
+        if (result.message) this.toast(result.message);
+        if (result.kind === 'picked_up') this.audio.play('pickup');
+        if (result.kind === 'stored') this.audio.play('store');
+      }
+
+      if (input.isDown('useTool') && this.currentTarget.kind === 'node' && this.currentTarget.node) {
+        const r = applyToolWork(this.world, this.currentTarget.node, dt);
+        if (r.effect && r.x !== undefined && this.playerRig.impactThisFrame) {
+          this.particles.emit(r.effect, r.x, r.y ?? 0, r.z ?? 0, 7);
+          this.audio.play(r.effect === 'woodchips' ? 'chop' : 'mine');
+        }
+        if (r.message) this.toast(r.message);
+      } else if (this.world.player.busyAction) {
+        this.world.player.busyAction = null;
+        this.world.player.busyTargetId = 0;
+      }
+
+      if (input.mousePressed(0) && input.overViewport) this.pickUnderCursor();
+    }
+  }
+
+  private pickUnderCursor(): void {
+    const cam = this.cameras.camera;
+    cam.getWorldPosition(this.pickOrigin);
+    this.pickDir.set(this.input.ndcX, this.input.ndcY, 0.5).unproject(cam).sub(this.pickOrigin).normalize();
+    const hit = this.world.terrain.raycast(
+      this.pickOrigin.x, this.pickOrigin.y, this.pickOrigin.z,
+      this.pickDir.x, this.pickDir.y, this.pickDir.z,
+      700,
+    );
+    if (!hit) return;
+
+    let bestKind: 'npc' | 'building' | 'node' | null = null;
+    let bestId = 0;
+    let bestD = 3.2;
+
+    this.world.npcGrid.forEachNear(hit.x, hit.z, 3.2, (n) => {
+      const d = Math.hypot(n.x - hit.x, n.z - hit.z);
+      if (d < bestD) {
+        bestD = d;
+        bestKind = 'npc';
+        bestId = n.id;
+      }
+    });
+
+    if (bestKind === null) {
+      const tx = this.world.terrain.tileX(hit.x);
+      const tz = this.world.terrain.tileZ(hit.z);
+      const b = this.world.buildingAt(tx, tz);
+      if (b) {
+        bestKind = 'building';
+        bestId = b.id;
+      }
+    }
+
+    if (bestKind === null) {
+      this.world.nodeGrid.forEachNear(hit.x, hit.z, 2.4, (n) => {
+        if (n.depleted) return;
+        const d = Math.hypot(n.x - hit.x, n.z - hit.z);
+        if (d < bestD) {
+          bestD = d;
+          bestKind = 'node';
+          bestId = n.id;
+        }
+      });
+    }
+
+    this.world.selection = bestKind ? { kind: bestKind, id: bestId } : null;
+  }
+
+  private updatePlayer(dt: number): void {
+    const player = this.world.player;
+    const run = !this.uiCapturesInput && this.input.isDown('run');
+    const jump = !this.uiCapturesInput && this.input.wasPressed('jump');
+
+    const wish = player.busyAction ? ZERO : this.wishDir;
+    player.update(dt, wish, run, jump, this.world.terrain, this.world.queryObstacles);
+
+    if (player.wading && player.speed > 1.5 && Math.random() < dt * 8) {
+      this.particles.emit('splash', player.position.x, player.position.y + 0.1, player.position.z, 3);
+    }
+
+    this.discoveryTimer += dt;
+    if (this.discoveryTimer > 0.5) {
+      this.discoveryTimer = 0;
+      this.world.updateDiscovery(player.position.x, player.position.z);
+    }
+  }
+
+  private cycleCameraMode(): void {
+    const order: CameraMode[] = ['third', 'first', 'build', 'overview'];
+    const next = order[(order.indexOf(this.cameras.mode) + 1) % order.length];
+    this.cameras.setMode(next);
+  }
+
+  private cycleSpeed(dir: number): void {
+    const opts: GameSpeed[] = [0, 1, 2, 4, 8];
+    const i = opts.indexOf(this.world.time.speed);
+    this.world.time.speed = opts[clamp(i + dir, 0, opts.length - 1)];
+  }
+
+  setSpeed(speed: GameSpeed): void {
+    this.world.time.speed = speed;
+  }
+
+  setCameraMode(mode: CameraMode): void {
+    this.cameras.setMode(mode);
+  }
+
+  selectBuilding(id: BuildingId | null): void {
+    this.build.select(id);
+    if (id && this.cameras.mode === 'third') this.cameras.setMode('build');
+  }
+
+  setOverlay(overlay: Overlay): void {
+    this.overlays.set(overlay);
+  }
+
+  get overlay(): Overlay {
+    return this.overlays.current;
+  }
+
+  /** Moves the camera and player focus to a world position, used by the map. */
+  focusOn(x: number, z: number): void {
+    this.world.player.position.set(x, this.world.terrain.heightAt(x, z), z);
+    this.world.player.velocity.set(0, 0, 0);
+    this.world.player.focusPoint(this.focusPoint);
+    this.cameras.snap(this.focusPoint);
+    this.vegetation.markDirty();
+  }
+
+  toast(message: string): void {
+    this.toastText = message;
+    this.toastTimer = 2.6;
+  }
+
+  // ---------------------------------------------------------- presentation
+
+  private updatePresentation(dt: number): void {
+    const world = this.world;
+    const player = world.player;
+    const camPos = this.cameras.camera.position;
+
+    this.playerRig.root.position.copy(player.position);
+    this.playerRig.root.rotation.y = player.yaw;
+    this.playerRig.setState(
+      player.busyAction === 'chop'
+        ? 'chop'
+        : player.busyAction === 'mine'
+          ? 'mine'
+          : player.busyAction === 'build'
+            ? 'build'
+            : player.busyAction === 'farm'
+              ? 'farm'
+              : player.speed > 0.2
+                ? player.speed > 4.4
+                  ? 'run'
+                  : player.carriedWeightFraction() > 0.55
+                    ? 'carry'
+                    : 'walk'
+                : 'idle',
+    );
+    this.playerRig.update(dt, player.speed);
+    this.playerRig.root.visible = this.cameras.mode !== 'first';
+
+    player.focusPoint(this.focusPoint);
+    this.cameras.update(dt, this.focusPoint);
+    this.renderer.resize(this.cameras.camera);
+
+    const snap = world.time.snapshot();
+    const skyState: SkyState = {
+      timeOfDay: snap.timeOfDay,
+      weather: world.weather.current,
+      weatherBlend: world.weather.blend,
+      daylightSkew: world.time.daylightSkew(),
+    };
+    this.sky.update(skyState, camPos, dt);
+
+    this.terrainRenderer.update(camPos, dt, 4);
+    this.vegetation.update(world.nodes, camPos);
+    const nightFactor = 1 - this.sky.daylight;
+    this.buildingRenderer.update(world, camPos, nightFactor);
+    this.pileRenderer.update(world.piles, camPos);
+    this.npcRenderer.update(world.npcs, camPos, dt);
+    this.wildlifeRenderer.update(world.wildlife, camPos, dt);
+    this.overlays.update(camPos, dt);
+
+    this.emitAmbientEffects(dt, nightFactor);
+    this.particles.update(dt);
+    this.audio.update(world, this.sky.daylight, dt);
+
+    if (this.toastTimer > 0) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) this.toastText = null;
+    }
+  }
+
+  /** Chimney smoke, weather, and the details that sell a living world. */
+  private emitAmbientEffects(dt: number, nightFactor: number): void {
+    const world = this.world;
+    const camPos = this.cameras.camera.position;
+
+    this.smokeTimer += dt;
+    if (this.smokeTimer > 0.5) {
+      this.smokeTimer = 0;
+      for (const b of world.buildings) {
+        if (!b.complete) continue;
+        const wantsSmoke = (b.def.housing ?? 0) > 0 || b.def.style === 'kiln' || b.def.style === 'workshop';
+        if (!wantsSmoke) continue;
+        if (b.residentIds.length === 0 && b.workerIds.length === 0) continue;
+        const cold =
+          world.terrain.temperatureAt(b.worldX, b.worldZ) + world.time.seasonalTemperatureOffset() < 9;
+        if (!cold && nightFactor < 0.3) continue;
+        if (Math.hypot(b.worldX - camPos.x, b.worldZ - camPos.z) > 180) continue;
+        this.particles.emit(
+          'smoke',
+          b.worldX + b.footprintWidth * 0.4,
+          b.groundY + b.def.height + 0.9,
+          b.worldZ + b.footprintDepth * 0.2,
+          1,
+        );
+      }
+
+      for (const npc of world.npcs) {
+        if (!npc.workAnim) continue;
+        if (Math.hypot(npc.x - camPos.x, npc.z - camPos.z) > 70) continue;
+        if (Math.random() > 0.45) continue;
+        const effect =
+          npc.activity === 'chopping'
+            ? 'woodchips'
+            : npc.activity === 'mining'
+              ? 'stonedust'
+              : npc.activity === 'building'
+                ? 'dust'
+                : null;
+        if (effect) this.particles.emit(effect, npc.x, npc.y + 0.7, npc.z, 3);
+      }
+    }
+
+    if (world.weather.isPrecipitating) {
+      const isSnow = world.weather.current === 'snow';
+      const heavy = world.weather.current === 'heavy_rain' || world.weather.current === 'storm';
+      const n = Math.round((heavy ? 26 : 12) * dt * 60 * 0.03);
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.random() * 22;
+        this.particles.emit(
+          isSnow ? 'leaves' : 'splash',
+          camPos.x + Math.cos(a) * r,
+          camPos.y + 12,
+          camPos.z + Math.sin(a) * r,
+          1,
+        );
+      }
+    }
+
+    if (this.tint.season === 'autumn' && Math.random() < dt * 4 && world.nodes.length > 0) {
+      const node = world.nodes[Math.floor(Math.random() * world.nodes.length)];
+      if (node && Math.hypot(node.x - camPos.x, node.z - camPos.z) < 60) {
+        this.particles.emit('leaves', node.x, node.y + 4, node.z, 1);
+      }
+    }
+  }
+
+  private applySeason(season: Season): void {
+    this.tint = {
+      season,
+      seasonTempOffset: this.world.time.seasonalTemperatureOffset(),
+      snowCover: snowCoverFor(season),
+    };
+    this.terrainRenderer.setTint(this.tint);
+    this.vegetation.setSeason(season, this.world.config.climate === 'cold');
+    this.buildingRenderer.setSeason(season);
+    this.build.setSeason(season);
+    this.world.log.add(this.world.time, 'settlement', `${capitalise(season)} arrives.`, { notable: true });
+  }
+
+  private publishHud(): void {
+    const snap = this.world.time.snapshot();
+    const h = this.hud;
+    h.version = ++this.hudVersion;
+    h.clock = `${String(snap.hour).padStart(2, '0')}:${String(snap.minute).padStart(2, '0')}`;
+    h.date = `${snap.dayOfMonth} ${MONTHS[snap.month]}, Yr ${snap.year}`;
+    h.season = snap.season as Season;
+    h.speed = this.world.time.speed;
+    h.weather = this.world.weather.label;
+    h.temperature =
+      this.world.terrain.temperatureAt(this.world.player.position.x, this.world.player.position.z) +
+      this.world.time.seasonalTemperatureOffset();
+    h.target = this.currentTarget;
+    h.cameraMode = this.cameras.mode;
+    h.fps = this.renderer.stats.fps;
+    h.drawCalls = this.renderer.stats.drawCalls;
+    h.triangles = this.renderer.stats.triangles;
+    h.toast = this.toastText;
+    this.onHud?.(h);
+  }
+
+  applySettings(settings: GameSettings): void {
+    this.settings = settings;
+    this.renderer.setQuality(settings.quality);
+    this.audio.setVolume(settings.masterVolume);
+  }
+
+  rebindAction(action: Action, codes: string[]): void {
+    this.input.setBinding(action, codes);
+  }
+
+  dispose(): void {
+    this.stop();
+    this.input.detach();
+    this.build.dispose();
+    this.overlays.dispose();
+    this.particles.dispose();
+    this.wildlifeRenderer.dispose();
+    this.npcRenderer.dispose();
+    this.pileRenderer.dispose();
+    this.buildingRenderer.dispose();
+    this.vegetation.dispose();
+    this.terrainRenderer.dispose();
+    this.sky.dispose();
+    this.playerRig.dispose();
+    this.charMaterial.dispose();
+    this.audio.dispose();
+    this.renderer.dispose();
+  }
+}
+
+const ZERO = new Vector3();
+const MONTHS = [
+  'Thaw', 'Seed', 'Blossom', 'Longsun', 'Highsun', 'Goldfall',
+  'Harvest', 'Ember', 'Grey', 'Frost', 'Deepwinter', 'Still',
+];
+
+function snowCoverFor(season: Season): number {
+  return season === 'winter' ? 1 : season === 'autumn' ? 0.3 : season === 'spring' ? 0.18 : 0.02;
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}

@@ -1,0 +1,227 @@
+/**
+ * Production tracking, prices, and shortage diagnosis.
+ *
+ * The interesting output here is not the money — it is telling the player *why*
+ * their settlement has stalled. "No planks" is far less useful than "the
+ * sawmill has no logs because nobody is hauling from the lumber camp".
+ */
+
+import { ItemId, ITEMS, ALL_ITEM_IDS } from '../data/items';
+import { Building } from './Building';
+import { clamp, clamp01 } from '../core/math';
+
+export interface ItemStat {
+  produced: number;
+  consumed: number;
+  stored: number;
+  price: number;
+}
+
+export type BottleneckKind =
+  | 'no_material'
+  | 'no_workers'
+  | 'storage_full'
+  | 'no_haulers'
+  | 'no_storage'
+  | 'starving'
+  | 'homeless'
+  | 'idle_workshop';
+
+export interface Bottleneck {
+  kind: BottleneckKind;
+  text: string;
+  detail: string;
+  severity: 'info' | 'warn' | 'critical';
+  buildingId?: number;
+  item?: ItemId;
+}
+
+const DECAY = 0.92;
+
+export class Economy {
+  /** Rolling per-day production and consumption. */
+  readonly stats = new Map<ItemId, ItemStat>();
+  treasury = 240;
+  bottlenecks: Bottleneck[] = [];
+
+  constructor() {
+    for (const id of ALL_ITEM_IDS) {
+      this.stats.set(id, { produced: 0, consumed: 0, stored: 0, price: ITEMS[id].value });
+    }
+  }
+
+  statOf(id: ItemId): ItemStat {
+    let s = this.stats.get(id);
+    if (!s) {
+      s = { produced: 0, consumed: 0, stored: 0, price: ITEMS[id].value };
+      this.stats.set(id, s);
+    }
+    return s;
+  }
+
+  recordProduction(item: ItemId, amount: number): void {
+    this.statOf(item).produced += amount;
+  }
+
+  recordConsumption(item: ItemId, amount: number): void {
+    this.statOf(item).consumed += amount;
+  }
+
+  /** Called once per game day. */
+  rollDay(buildings: Building[]): void {
+    const stored = new Map<ItemId, number>();
+    for (const b of buildings) {
+      if (!b.complete) continue;
+      for (const s of b.inventory.slots) {
+        if (!s) continue;
+        stored.set(s.item, (stored.get(s.item) ?? 0) + s.count);
+      }
+    }
+
+    for (const id of ALL_ITEM_IDS) {
+      const st = this.statOf(id);
+      st.stored = stored.get(id) ?? 0;
+
+      // Price moves with scarcity: plentiful goods get cheap, scarce ones dear.
+      const base = ITEMS[id].value;
+      const demandPressure = st.consumed - st.produced;
+      const scarcity = clamp(1.4 - st.stored / 40 + demandPressure * 0.02, 0.55, 2.4);
+      st.price = st.price * 0.7 + base * scarcity * 0.3;
+
+      st.produced *= DECAY;
+      st.consumed *= DECAY;
+    }
+  }
+
+  priceOf(id: ItemId): number {
+    return Math.max(1, Math.round(this.statOf(id).price));
+  }
+
+  /**
+   * Looks at the whole settlement and reports what is actually holding it up.
+   */
+  diagnose(
+    buildings: Building[],
+    haulerCount: number,
+    foodDays: number,
+    homeless: number,
+    population: number,
+  ): void {
+    const out: Bottleneck[] = [];
+
+    if (population > 0 && foodDays < 2) {
+      out.push({
+        kind: 'starving',
+        text: 'Food is running out',
+        detail: `Less than ${foodDays.toFixed(1)} days of food in store. People will start to starve.`,
+        severity: 'critical',
+      });
+    } else if (population > 0 && foodDays < 5) {
+      out.push({
+        kind: 'starving',
+        text: 'Food stores are low',
+        detail: `About ${foodDays.toFixed(1)} days of food remain.`,
+        severity: 'warn',
+      });
+    }
+
+    if (homeless > 0) {
+      out.push({
+        kind: 'homeless',
+        text: `${homeless} ${homeless === 1 ? 'person has' : 'people have'} nowhere to sleep`,
+        detail: 'People without a home rest badly and get sick. Build more housing.',
+        severity: homeless > population * 0.4 ? 'critical' : 'warn',
+      });
+    }
+
+    const stores = buildings.filter((b) => b.isStorage);
+    if (stores.length === 0 && buildings.some((b) => b.complete)) {
+      out.push({
+        kind: 'no_storage',
+        text: 'Nowhere to store goods',
+        detail: 'Without a stockpile or warehouse, harvested goods stay where they fell.',
+        severity: 'warn',
+      });
+    } else if (stores.length > 0 && stores.every((s) => s.inventory.fullness > 0.96)) {
+      out.push({
+        kind: 'storage_full',
+        text: 'Storage is full',
+        detail: 'Haulers have nowhere to put anything. Build more storage.',
+        severity: 'warn',
+      });
+    }
+
+    if (haulerCount === 0 && buildings.filter((b) => b.complete).length > 2) {
+      out.push({
+        kind: 'no_haulers',
+        text: 'Nobody is hauling',
+        detail: 'Goods will sit where they are produced. Assign someone as a hauler.',
+        severity: 'warn',
+      });
+    }
+
+    // Stalled construction, with the specific missing material named.
+    const missingTotals = new Map<ItemId, number>();
+    let stalledSites = 0;
+    for (const b of buildings) {
+      if (b.complete || b.demolishing) continue;
+      const missing = b.missingMaterials();
+      if (missing.length === 0) continue;
+      stalledSites++;
+      for (const m of missing) {
+        missingTotals.set(m.item, (missingTotals.get(m.item) ?? 0) + m.amount);
+      }
+    }
+    if (stalledSites > 0) {
+      const worst = [...missingTotals.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (worst) {
+        out.push({
+          kind: 'no_material',
+          text: `Construction waiting on ${ITEMS[worst[0]].name.toLowerCase()}`,
+          detail: `${stalledSites} ${stalledSites === 1 ? 'site needs' : 'sites need'} materials delivered. ${worst[1]} ${ITEMS[worst[0]].name.toLowerCase()} short.`,
+          severity: 'info',
+          item: worst[0],
+        });
+      }
+    }
+
+    // Workshops with nobody in them.
+    for (const b of buildings) {
+      if (!b.complete || b.def.workSlots === 0 || b.paused) continue;
+      if (b.workerIds.length === 0) {
+        out.push({
+          kind: 'no_workers',
+          text: `${b.def.name} has no workers`,
+          detail: 'Assign someone to it from the Jobs panel, or it will produce nothing.',
+          severity: 'info',
+          buildingId: b.id,
+        });
+      }
+    }
+
+    this.bottlenecks = out.slice(0, 8);
+  }
+
+  /** 0..1 how well supplied the settlement is with a given item. */
+  supplyHealth(id: ItemId): number {
+    const st = this.statOf(id);
+    return clamp01(st.stored / 30);
+  }
+
+  serialize(): Record<string, unknown> {
+    const stats: Record<string, ItemStat> = {};
+    for (const [k, v] of this.stats) stats[k] = v;
+    return { treasury: this.treasury, stats };
+  }
+
+  restore(data: Record<string, unknown> | undefined): void {
+    if (!data) return;
+    if (typeof data.treasury === 'number') this.treasury = data.treasury;
+    const stats = data.stats as Record<string, ItemStat> | undefined;
+    if (stats) {
+      for (const [k, v] of Object.entries(stats)) {
+        if (ALL_ITEM_IDS.includes(k as ItemId)) this.stats.set(k as ItemId, v);
+      }
+    }
+  }
+}
