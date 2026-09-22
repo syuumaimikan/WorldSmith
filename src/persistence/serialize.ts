@@ -62,10 +62,16 @@ export function serializeWorld(world: World, id: string): SaveData {
     research: world.research.serialize(),
     settlement: world.settlement.serialize(),
     weather: world.weather.serialize(),
+    climate: world.climate.serialize(),
+    storms: world.storms.serialize(),
+    disasters: world.disasters.serialize(),
+    volcanoes: world.volcanoes.map((v) => ({ ...v })),
     economy: world.economy.serialize(),
     wildlife: world.serializeWildlife(),
     nextEntityId: world.peekNextId(),
     tutorialStep: world.tutorialStep,
+    possessed: world.possessed,
+    lightningStrikes: world.lightningStrikes,
   };
 }
 
@@ -137,9 +143,18 @@ export function deserializeWorld(data: SaveData): World {
   world.research.restore(data.research);
   world.settlement.restore(data.settlement);
   world.weather.restore(data.weather);
+  world.climate.restore(data.climate);
+  world.storms.restore(data.storms);
+  world.disasters.restore(data.disasters, world);
+  world.restoreVolcanoes(data.volcanoes ?? []);
   world.economy.restore(data.economy);
   world.deserializeWildlife(data.wildlife ?? []);
   world.tutorialStep = data.tutorialStep ?? 0;
+  world.possessed = typeof data.possessed === 'number' ? data.possessed : 0;
+  world.lightningStrikes =
+    typeof data.lightningStrikes === 'number' && data.lightningStrikes >= 0
+      ? data.lightningStrikes
+      : 0;
   world.rebuildRegrowQueue();
   world.afterLoad();
 

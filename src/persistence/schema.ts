@@ -11,7 +11,7 @@ import type { WorldEvent } from '../sim/EventLog';
 import type { SerializedInventory } from '../sim/Inventory';
 import type { GameSpeed } from '../sim/Time';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export interface SavedTerrain {
   gridSize: number;
@@ -94,6 +94,17 @@ export interface SavedJob {
   data: Record<string, unknown>;
 }
 
+export interface SavedVolcano {
+  id: number;
+  x: number;
+  z: number;
+  radius: number;
+  state: string;
+  pressure: number;
+  name: string;
+  eruptionLeft?: number;
+}
+
 export interface SaveData {
   version: number;
   id: string;
@@ -112,10 +123,17 @@ export interface SaveData {
   research: { unlocked: string[]; active: string | null; progress: number; points: number };
   settlement: Record<string, unknown>;
   weather: Record<string, unknown>;
+  climate: Record<string, unknown>;
+  storms: Record<string, unknown>;
+  disasters: Record<string, unknown>;
+  volcanoes: SavedVolcano[];
   economy: Record<string, unknown>;
   wildlife: { id: number; species: string; x: number; z: number; age: number }[];
   nextEntityId: number;
   tutorialStep: number;
+  /** Settler the player was driving when the game was saved, or 0. */
+  possessed: number;
+  lightningStrikes: number;
 }
 
 export interface SaveSummary {
@@ -160,6 +178,18 @@ export function migrate(raw: AnySave): SaveData {
     }
     data.tutorialStep = data.tutorialStep ?? 0;
     data.version = 4;
+  }
+  if (data.version < 5) {
+    // v4 predates the atmosphere, the storms and the disaster systems. An old
+    // world simply starts them fresh: the air settles to the ground beneath it
+    // and nothing is on fire, which is a perfectly good state to resume from.
+    data.climate = data.climate ?? {};
+    data.storms = data.storms ?? {};
+    data.disasters = data.disasters ?? {};
+    data.volcanoes = data.volcanoes ?? [];
+    data.possessed = 0;
+    data.lightningStrikes = 0;
+    data.version = 5;
   }
 
   return data;

@@ -7,7 +7,8 @@
  */
 
 import { Rng } from '../core/rng';
-import { clamp01, damp } from '../core/math';
+import { clamp, clamp01, damp } from '../core/math';
+import type { ClimateSystem } from './Climate';
 import type { WeatherKind } from '../render/Sky';
 import { ClimatePreset } from '../world/types';
 import { SeasonName } from './Time';
@@ -55,6 +56,8 @@ export class WeatherSystem {
   blend = 1;
   /** Game hours remaining before the next change. */
   private hoursRemaining = 8;
+  /** Debounce before the sky is allowed to change state again. */
+  private settleHours = 0.6;
   private rng: Rng;
   private climate: ClimatePreset;
 
@@ -76,6 +79,15 @@ export class WeatherSystem {
   /** Set for one tick when a new weather state begins. */
   justChanged = false;
 
+  /** Local conditions at the observer, read straight from the atmosphere. */
+  temperature = 12;
+  /** Rain or snow rate over the observer, roughly mm per hour. */
+  precipitation = 0;
+  /** Lying snow at the observer, mm of water. */
+  snowDepth = 0;
+  /** Game hours a forced weather still overrides the atmosphere for. */
+  private forcedHours = 0;
+
   constructor(seed: number, climate: ClimatePreset) {
     this.rng = new Rng(seed ^ 0x7ea7);
     this.climate = climate;
@@ -94,6 +106,66 @@ export class WeatherSystem {
     );
   }
 
+  /**
+   * Reads the air over a point and reports what it is like to stand there.
+   *
+   * The atmosphere decides the weather; this turns it into the handful of
+   * numbers the rest of the game and the renderer already speak. A forced
+   * weather (a god power, a scripted event) overrides it until it expires.
+   */
+  driveFrom(climate: ClimateSystem, x: number, z: number, hours: number): void {
+    this.justChanged = false;
+
+    this.temperature = climate.temperatureAt(x, z);
+    this.precipitation = climate.precipitationAt(x, z);
+    this.snowDepth = climate.snowDepthAt(x, z);
+
+    const air = climate.sampleAt(x, z);
+    this.windDirection = air.windDirection;
+    this.windStrength = clamp01(air.windSpeed / 26);
+
+    if (this.forcedHours > 0) {
+      this.forcedHours -= hours;
+      this.applyProfile(hours);
+      return;
+    }
+
+    const kind = climate.kindAt(x, z);
+    if (kind !== this.current) {
+      // Hold each state briefly so a boundary between two cells does not
+      // make the sky flicker as the player walks along it.
+      this.settleHours -= hours;
+      if (this.settleHours <= 0) {
+        this.current = kind;
+        this.blend = 0;
+        this.justChanged = true;
+        this.settleHours = 0.6;
+      }
+    } else {
+      this.settleHours = 0.6;
+    }
+
+    this.blend = Math.min(1, this.blend + hours * 0.9);
+    this.applyProfile(hours);
+  }
+
+  /** Smooths the consequences of the current state toward their targets. */
+  private applyProfile(hours: number): void {
+    const p = WEATHER_PROFILES[this.current];
+    const t = clamp01(this.blend);
+    // Heavier rain hurts work more than a drizzle, so scale by what is falling.
+    const intensity = clamp(0.55 + this.precipitation * 0.16, 0.55, 1.6);
+    const sev = clamp01(p.severity * t * intensity);
+    this.severity = damp(this.severity, sev, 1.2, hours);
+    this.workPenalty = damp(this.workPenalty, 1 + (p.workPenalty - 1) * t, 1.2, hours);
+    this.moveMultiplier = damp(this.moveMultiplier, 1 + (p.moveMultiplier - 1) * t, 1.2, hours);
+    // Crops care about the actual temperature, not just the label in the sky.
+    const cold = this.temperature < 4 ? clamp01((this.temperature + 2) / 6) : 1;
+    const scorch = this.temperature > 34 ? clamp01(1 - (this.temperature - 34) / 12) : 1;
+    this.cropGrowthMultiplier = (1 + (p.cropGrowth - 1) * t) * cold * scorch;
+  }
+
+  /** Legacy standalone mode, kept so headless tests can run without air. */
   update(dt: number, hoursPerSecond: number, season: SeasonName): void {
     this.justChanged = false;
     const hours = dt * hoursPerSecond;
@@ -140,12 +212,17 @@ export class WeatherSystem {
     this.hoursRemaining = this.rng.range(p.minDurationHours, p.maxDurationHours);
   }
 
-  /** Force a specific weather, used by world events. */
+  /** Force a specific weather, used by god powers and world events. */
   force(kind: WeatherKind, hours: number): void {
     this.current = kind;
     this.hoursRemaining = hours;
+    this.forcedHours = hours;
     this.blend = 0;
     this.justChanged = true;
+  }
+
+  get isForced(): boolean {
+    return this.forcedHours > 0;
   }
 
   serialize(): Record<string, unknown> {
@@ -155,6 +232,7 @@ export class WeatherSystem {
       hoursRemaining: this.hoursRemaining,
       windDirection: this.windDirection,
       windStrength: this.windStrength,
+      forcedHours: this.forcedHours,
     };
   }
 
@@ -167,5 +245,6 @@ export class WeatherSystem {
     if (typeof data.hoursRemaining === 'number') this.hoursRemaining = data.hoursRemaining;
     if (typeof data.windDirection === 'number') this.windDirection = data.windDirection;
     if (typeof data.windStrength === 'number') this.windStrength = data.windStrength;
+    if (typeof data.forcedHours === 'number') this.forcedHours = clamp(data.forcedHours, 0, 500);
   }
 }

@@ -90,6 +90,9 @@ export function updateVolcanoes(world: World, dt: number): void {
 export function beginEruption(world: World, v: Volcano): void {
   v.state = 'erupting';
   v.eruptionLeft = 90 + Math.random() * 120;
+  // What goes up into the high air stays there, and the whole world is a
+  // little colder for the next few years because of it.
+  world.climate.addAerosol(0.6 + (v.pressure - 1) * 1.2 + v.radius / 260);
   world.log.add(world.time, 'disaster', 'event.eruption', { name: v.name }, {
     notable: true,
     x: v.x,

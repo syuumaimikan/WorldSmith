@@ -65,6 +65,22 @@ export function run(world: World, seconds: number): void {
   for (let i = 0; i < ticks; i++) world.simulate(TICK);
 }
 
+/**
+ * Runs `days` of weather and nothing else.
+ *
+ * The atmosphere is the same code the game runs, but skipping the people,
+ * jobs and crops makes a century of climate cheap enough to assert on.
+ */
+export function runAir(world: World, days: number): void {
+  const STEP = 0.25; // game hours, matching the world's own cadence
+  const steps = Math.round((days * 24) / STEP);
+  for (let i = 0; i < steps; i++) {
+    world.time.advance(STEP * 12);
+    world.stepAtmosphere(STEP);
+    world.weather.driveFrom(world.climate, world.player.position.x, world.player.position.z, STEP);
+  }
+}
+
 /** Finds the first legal placement for a building near a point. */
 export function placeNear(
   world: World,

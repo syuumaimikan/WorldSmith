@@ -28,6 +28,9 @@ import { ProfessionId, PROFESSIONS, personName } from '../data/professions';
 import { JobBoard, JobContext } from './Jobs';
 import { Navigation } from './Navigation';
 import { WeatherSystem } from './Weather';
+import { ClimateSystem } from './Climate';
+import { StormSystem } from './Storms';
+import { Namer } from './Naming';
 import { ResearchSystem } from './Research';
 import { Settlement } from './Settlement';
 import { Economy } from './Economy';
@@ -37,9 +40,9 @@ import { updateNpc } from './systems/NpcAI';
 import { updateAnimals } from './systems/WildlifeAI';
 import { TerrainEditor } from '../world/TerrainEdit';
 import { DisasterManager } from './Disasters';
-import type { Volcano } from './Volcano';
+import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
-import { SavedBuilding, SavedNpc, SavedJob } from '../persistence/schema';
+import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
 import { Inventory } from './Inventory';
 
 export interface HarvestResult {
@@ -58,6 +61,12 @@ const JOB_REFRESH_INTERVAL = 1.4;
 const SETTLEMENT_INTERVAL = 4;
 const ASSIGNMENT_INTERVAL = 6;
 const PILE_LIMIT = 900;
+/**
+ * Game hours between atmosphere steps. Fifteen minutes of weather is fine
+ * grain for something that moves at the speed of a cloud, and it keeps the
+ * grid work off the hot path.
+ */
+const CLIMATE_STEP_HOURS = 0.25;
 
 export class World {
   readonly config: WorldConfig;
@@ -93,6 +102,9 @@ export class World {
   readonly jobs = new JobBoard();
   readonly nav: Navigation;
   readonly weather: WeatherSystem;
+  readonly climate: ClimateSystem;
+  readonly storms: StormSystem;
+  readonly namer: Namer;
   readonly research = new ResearchSystem();
   readonly settlement: Settlement;
   readonly economy = new Economy();
@@ -118,6 +130,11 @@ export class World {
   private mineOre = new Map<number, ItemId[]>();
   /** Throttles repeated ashfall messages during a long eruption. */
   private lastAshReport = -99;
+  /** Game hours of weather owed to the atmosphere since it last stepped. */
+  private climateAccum = 0;
+  /** Running totals, for the chronicle and the statistics screens. */
+  lightningStrikes = 0;
+  snowmeltCarried = 0;
 
   constructor(
     config: WorldConfig,
@@ -139,6 +156,9 @@ export class World {
     this.nav = new Navigation(terrain);
     this.explored = new Uint8Array(terrain.gridSize * terrain.gridSize);
     this.weather = new WeatherSystem(config.seed, config.climate);
+    this.climate = new ClimateSystem(terrain, config.seed, config.climate);
+    this.storms = new StormSystem(config.seed);
+    this.namer = new Namer(config.seed);
     this.settlement = new Settlement(config.name, startX, startZ);
     this.editor = new TerrainEditor(terrain);
     this.disasters = new DisasterManager(config.seed);
@@ -1240,10 +1260,7 @@ export class World {
     this.time.advance(dt);
     const hours = this.time.hoursFor(dt);
 
-    this.weather.update(dt, hours / Math.max(dt, 1e-6), this.time.season);
-    if (this.weather.justChanged) {
-      this.log.add(this.time, 'weather', 'ev.weatherTurns', { weather: this.weather.current });
-    }
+    this.updateAtmosphere(hours);
 
     this.nav.resetBudget(6);
 
@@ -1604,6 +1621,134 @@ export class World {
     return true;
   }
 
+  /**
+   * The air, and everything the air does.
+   *
+   * The atmosphere runs on a slower cadence than the rest of the tick because
+   * air does not need fifteen updates a second, but the hours it is given are
+   * exactly the hours that passed, so nothing is lost at high game speeds.
+   */
+  private updateAtmosphere(hours: number): void {
+    this.climateAccum += hours;
+    if (this.climateAccum >= CLIMATE_STEP_HOURS) {
+      const step = this.climateAccum;
+      this.climateAccum = 0;
+      this.stepAtmosphere(step);
+    }
+
+    // The weather the player experiences is the air they are standing in.
+    const ob = this.observer;
+    this.weather.driveFrom(this.climate, ob.x, ob.z, hours);
+    if (this.weather.justChanged) {
+      this.log.add(this.time, 'weather', 'ev.weatherTurns', { weather: this.weather.current });
+    }
+  }
+
+  /**
+   * One step of the air and everything that rides on it. Public because the
+   * atmosphere is worth exercising on its own, without paying for a whole
+   * settlement's worth of simulation to do it.
+   */
+  stepAtmosphere(hours: number): void {
+    this.climate.update(this.time, hours);
+    this.storms.update(this, hours);
+    this.resolveLightning();
+    this.reportClimate();
+    this.applyMeltwater(hours);
+  }
+
+  /** Where the weather is being watched from: the player, or a possessed body. */
+  get observer(): { x: number; z: number } {
+    return this.player.position;
+  }
+
+  /** Lightning sets fire to whatever it hits, if that will burn. */
+  private resolveLightning(): void {
+    for (const strike of this.climate.strikes) {
+      this.lightningStrikes++;
+      this.disasters.ignite(this, strike.x, strike.z, 0.55);
+    }
+  }
+
+  /** Announces the slow things: a heat wave beginning, a drought breaking. */
+  private reportClimate(): void {
+    for (const e of this.climate.extremes) {
+      if (e.announced) continue;
+      e.announced = true;
+      this.log.add(this.time, 'weather', `ev.${e.kind}`, undefined, { notable: true });
+    }
+  }
+
+  /**
+   * Snow that thaws has to go somewhere. It wets the ground it came off and
+   * swells the rivers below, which is why a warm spell after a hard winter
+   * floods the low ground.
+   */
+  private applyMeltwater(hours: number): void {
+    const melt = this.climate.meltwater(hours);
+    if (melt <= 0.01) return;
+    const t = this.terrain;
+    // Spread the thaw over the map in proportion to where the snow was.
+    const c = this.climate;
+    for (let cz = 0; cz < c.cells; cz++) {
+      for (let cx = 0; cx < c.cells; cx++) {
+        const ci = cz * c.cells + cx;
+        if (c.snowpack[ci] <= 0 || c.temperature[ci] <= 0.5) continue;
+        const wx = (cx + 0.5) * c.cellSize;
+        const wz = (cz + 0.5) * c.cellSize;
+        const i = t.index(t.tileX(wx), t.tileZ(wz));
+        t.data.moisture[i] = clamp01(t.data.moisture[i] + hours * 0.004);
+      }
+    }
+    this.snowmeltCarried += melt;
+  }
+
+  /** Someone is under a roof, so the weather cannot reach them. */
+  isSheltered(npc: Npc): boolean {
+    // Standing inside the footprint of a finished, roofed building.
+    for (const b of this.buildings) {
+      if (!b.complete || b.def.height < 1.2) continue;
+      const half = Math.max(b.def.width, b.def.depth) * this.terrain.tileSize * 0.6;
+      if (Math.abs(b.worldX - npc.x) <= half && Math.abs(b.worldZ - npc.z) <= half) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Puts the volcanoes back from a save. Every field is checked, because a
+   * save file is data from outside the program however it got here.
+   */
+  restoreVolcanoes(saved: SavedVolcano[]): void {
+    this.volcanoes.length = 0;
+    if (!Array.isArray(saved)) return;
+    const states: VolcanoState[] = ['dormant', 'unrest', 'erupting', 'spent'];
+    for (const raw of saved) {
+      if (!raw || typeof raw !== 'object') continue;
+      const num = (v: unknown, fallback: number): number =>
+        typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+      const size = this.terrain.worldSize;
+      this.volcanoes.push({
+        id: num(raw.id, this.nextId()),
+        x: clamp(num(raw.x, size / 2), 0, size),
+        z: clamp(num(raw.z, size / 2), 0, size),
+        radius: clamp(num(raw.radius, 50), 4, size),
+        state: states.includes(raw.state as VolcanoState) ? (raw.state as VolcanoState) : 'dormant',
+        pressure: clamp(num(raw.pressure, 0.2), 0, 4),
+        name: typeof raw.name === 'string' ? raw.name.slice(0, 64) : 'Unnamed Peak',
+        eruptionLeft: raw.eruptionLeft === undefined ? undefined : clamp(num(raw.eruptionLeft, 0), 0, 4000),
+      });
+    }
+  }
+
+  /** A tree blown down by the wind: the timber is still there to be taken. */
+  fellByWind(node: ResourceNode): void {
+    const def = RESOURCES[node.kind];
+    if (def.category === 'tree') {
+      this.dropPile('log', Math.max(1, Math.round(node.growth * 3)), node.x, node.z);
+    }
+    this.removeNode(node);
+  }
+
   /** Collapses a steep slope downhill. */
   landslide(x: number, z: number, radius: number): void {
     this.editor.sculpt(x, z, radius, -this.rng.range(1.5, 4), 'dome', 'landslide');
@@ -1710,7 +1855,7 @@ export class World {
       radius,
       state: 'dormant',
       pressure: 0.2,
-      name: `${this.config.name} Peak`,
+      name: this.namer.featureName('volcano', `${Math.round(x)},${Math.round(z)}`),
     });
     this.nav.markCostDirty();
   }

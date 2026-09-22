@@ -137,6 +137,8 @@ export class Game {
   private smokeTimer = 0;
   private autosaveTimer = 0;
   private discoveryTimer = 0;
+  /** Snow cover the ground is currently painted with. */
+  private snowShown = 0;
   private pickOrigin = new Vector3();
   private pickDir = new Vector3();
 
@@ -159,9 +161,10 @@ export class Game {
     const season = snap.season as Season;
     this.tint = {
       season,
-      seasonTempOffset: world.time.seasonalTemperatureOffset(),
-      snowCover: snowCoverFor(season),
+      seasonTempOffset: world.climate.groundTemperatureOffset(),
+      snowCover: world.climate.snowCover(),
     };
+    this.snowShown = this.tint.snowCover;
 
     const cold = world.config.climate === 'cold';
     this.terrainRenderer = new TerrainRenderer(world.terrain, this.scene, this.tint);
@@ -715,6 +718,7 @@ export class Game {
     this.wildlifeRenderer.update(world.wildlife, camPos, dt);
     this.overlays.update(camPos, dt);
 
+    this.updateSnowLine();
     this.emitAmbientEffects(dt, nightFactor);
     this.god.tick(dt);
     this.emitFireEffects(dt);
@@ -794,6 +798,25 @@ export class Game {
     }
   }
 
+  /**
+   * Repaints the ground when the snow line has genuinely moved. Rebuilding
+   * every chunk is not cheap, so it waits for a change worth seeing rather
+   * than chasing every hour's thaw.
+   */
+  private updateSnowLine(): void {
+    const cover = this.world.climate.snowCover();
+    const offset = this.world.climate.groundTemperatureOffset();
+    if (
+      Math.abs(cover - this.snowShown) < 0.05 &&
+      Math.abs(offset - this.tint.seasonTempOffset) < 1.2
+    ) {
+      return;
+    }
+    this.snowShown = cover;
+    this.tint = { ...this.tint, snowCover: cover, seasonTempOffset: offset };
+    this.terrainRenderer.setTint(this.tint);
+  }
+
   /** Flame and smoke above every active fire. */
   private emitFireEffects(dt: number): void {
     const camPos = this.cameras.camera.position;
@@ -812,9 +835,10 @@ export class Game {
   private applySeason(season: Season): void {
     this.tint = {
       season,
-      seasonTempOffset: this.world.time.seasonalTemperatureOffset(),
-      snowCover: snowCoverFor(season),
+      seasonTempOffset: this.world.climate.groundTemperatureOffset(),
+      snowCover: this.world.climate.snowCover(),
     };
+    this.snowShown = this.tint.snowCover;
     this.terrainRenderer.setTint(this.tint);
     this.vegetation.setSeason(season, this.world.config.climate === 'cold');
     this.buildingRenderer.setSeason(season);
@@ -882,8 +906,4 @@ export class Game {
 }
 
 const ZERO = new Vector3();
-
-function snowCoverFor(season: Season): number {
-  return season === 'winter' ? 1 : season === 'autumn' ? 0.3 : season === 'spring' ? 0.18 : 0.02;
-}
 

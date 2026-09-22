@@ -94,6 +94,41 @@ export function earthquakeResistance(b: Building): number {
   return clamp01(base * (0.55 + b.condition * 0.45));
 }
 
+/**
+ * How well a building stands up to wind. Mass and a low profile help, so a
+ * stone cottage rides out what strips the canvas off a tent and lifts a tall
+ * timber frame off its footings.
+ */
+export function windResistance(b: Building): number {
+  const mats = b.def.totalMaterials;
+  let mass = 0;
+  let score = 0;
+  const weight: Partial<Record<ItemId, number>> = {
+    stone: 0.9,
+    stone_block: 0.95,
+    brick: 0.88,
+    iron_ingot: 0.95,
+    nails: 0.8,
+    beam: 0.6,
+    plank: 0.42,
+    log: 0.5,
+    thatch: 0.12,
+    cloth: 0.05,
+    fiber: 0.08,
+    glass: 0.25,
+  };
+  for (const [item, amount] of Object.entries(mats) as [ItemId, number][]) {
+    const w = weight[item];
+    if (w === undefined) continue;
+    mass += amount;
+    score += w * amount;
+  }
+  if (mass === 0) return 0.9;
+  // A tall building catches far more wind than a low one.
+  const profile = clamp01(1 - (b.def.height - 1.5) / 14);
+  return clamp01((score / mass) * (0.5 + profile * 0.5) * (0.55 + b.condition * 0.45));
+}
+
 export class DisasterManager {
   readonly fires: Fire[] = [];
   private floods: FloodCell[] = [];
