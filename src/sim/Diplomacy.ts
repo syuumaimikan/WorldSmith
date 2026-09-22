@@ -248,6 +248,8 @@ export class DiplomacySystem {
         // Nobody musters an army and marches it across the world for a hamlet.
         // A neighbour has to be worth the trouble before it is worth a war.
         if (defender.population < 25 && defender.treasury < 200) continue;
+        // And a faction fighting its own government is somebody else's war.
+        if (defender.rebelAgainst !== 0 || attacker.rebelAgainst !== 0) continue;
 
         const reason = this.casusBelli(attacker, defender, r);
         if (!reason) continue;
@@ -400,7 +402,10 @@ export class DiplomacySystem {
       // Supply: an army on its own land is fed; one abroad lives off what it
       // can take, and that runs out.
       const here = world.nations.nationAt(army.x, army.z);
-      const friendly = here?.id === army.nation;
+      // Rebels are at home: they are fighting in the country they live in, and
+      // the countryside feeds them as readily as it feeds the government.
+      const friendly =
+        here?.id === army.nation || (here !== null && here.id === nation.rebelAgainst);
       army.supply = clamp01(army.supply + (friendly ? 0.08 : -0.045) * days);
       if (army.supply < 0.35) {
         // Hunger and desertion do what battles have not.
@@ -690,6 +695,13 @@ export class DiplomacySystem {
   }
 
   private makePeace(world: World, war: War, attacker: Nation, defender: Nation): void {
+    // A war of independence does not end in a treaty. One side is the
+    // government afterwards and the other does not exist.
+    if (war.goal === 'independence' && attacker.rebelAgainst === defender.id) {
+      world.nations.settleCivilWar(world, attacker, war.warScore > 0);
+      return;
+    }
+
     const r = this.relation(attacker.id, defender.id);
     r.truceDays = 600;
     r.opinion = clamp(r.opinion + 12, -100, 100);

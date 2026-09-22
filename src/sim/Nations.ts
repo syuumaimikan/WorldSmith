@@ -135,6 +135,11 @@ export interface Nation {
   army: number;
 
   laws: Set<LawId>;
+  /**
+   * The polity this one broke away from, if it is a rebel faction rather than
+   * a country. A faction that wins becomes the government it was fighting.
+   */
+  rebelAgainst: number;
   /** How many times this polity has been overthrown. */
   regimeChanges: number;
   /** Day the last overthrow happened, so a new regime gets time to settle. */
@@ -288,6 +293,7 @@ export class NationSystem {
       treasury: 0,
       army: 0,
       laws: new Set<LawId>(),
+      rebelAgainst: 0,
       regimeChanges: 0,
       lastRegimeChangeDay: day,
       inCivilWar: false,
@@ -355,6 +361,9 @@ export class NationSystem {
    * outward; one that is falling apart lets the edges go.
    */
   private adjustBorders(nation: Nation, days: number): void {
+    // A faction in the field claims nothing. It is fighting for the country
+    // it is already standing in.
+    if (nation.rebelAgainst !== 0) return;
     if (nation.isPlayer) {
       // A settlement claims the ground it has spread over. Borders follow the
       // buildings, not an abstract appetite for land.
@@ -552,12 +561,23 @@ export class NationSystem {
       nation.army = Math.min(levyCap, nation.army + Math.max(0.2, levyCap * 0.05) * days);
     }
 
+    // A faction whose war has stopped — because it was settled elsewhere, or
+    // because the government it was fighting no longer exists — has nothing
+    // left to be. Without this it would linger as a country that is not one.
+    if (nation.rebelAgainst !== 0) {
+      const parent = this.byId(nation.rebelAgainst);
+      if (!parent || !world.diplomacy.atWar(nation.id, parent.id)) {
+        this.settleCivilWar(world, nation, false);
+        return;
+      }
+    }
+
     this.adjustBorders(nation, days);
 
     // A polity reduced to a handful of people on one patch of ground is not a
     // polity any more. Rather than leave it twitching at zero for ever, it
     // disperses, and its land goes back to being nobody's.
-    if (!nation.isPlayer && nation.population < 40 && nation.territory <= 2) {
+    if (!nation.isPlayer && nation.rebelAgainst === 0 && nation.population < 40 && nation.territory <= 2) {
       this.dissolve(world, nation);
     }
 
@@ -756,9 +776,12 @@ export class NationSystem {
     // What matters is not how many soldiers there are but how many there are
     // for the number of people rising: an army of eighty is decisive in a town
     // and irrelevant in a kingdom.
+    // An ordinary levy is about a sixteenth of the people; an army several
+    // times that size is decisive, and must be allowed to be, or no rising
+    // could ever simply be put down.
     const levied = nation.army / Math.max(1, nation.population * 0.06);
     const regimeStrength =
-      clamp01(levied) * 0.55 + traits.decisiveness * 0.35 + nation.leader.competence * 0.25;
+      Math.min(2.2, levied) * 0.55 + traits.decisiveness * 0.35 + nation.leader.competence * 0.25;
     const rebelStrength = nation.unrest * 1.1 + (1 - nation.legitimacy) * 0.7;
 
     world.log.add(world.time, 'settlement', 'ev.uprising', { nation: nation.name }, {
@@ -766,6 +789,15 @@ export class NationSystem {
       x: nation.x,
       z: nation.z,
     });
+
+    // When the two sides are within reach of each other, it is not settled by
+    // comparing them. It is settled by fighting, which takes years and which
+    // either side can lose.
+    const ratio = regimeStrength / Math.max(0.01, rebelStrength);
+    if (ratio > 0.7 && ratio < 1.45 && !nation.inCivilWar) {
+      this.startCivilWar(world, nation);
+      return;
+    }
 
     if (regimeStrength > rebelStrength) {
       // Put down. Quiet now, resented for a long time.
@@ -801,6 +833,96 @@ export class NationSystem {
       { nation: nation.name, from: `gov.${before}`, to: `gov.${nation.government}` },
       { notable: true, x: nation.x, z: nation.z },
     );
+  }
+
+  /**
+   * The country splits in two and fights itself.
+   *
+   * The rebels become a polity of their own with no land and an army raised
+   * from the people who rose: they are not a special case in the war system
+   * but an ordinary participant in it, so the fighting, the marching, the
+   * supply and the exhaustion all work exactly as they do between countries.
+   */
+  private startCivilWar(world: World, nation: Nation): void {
+    const rebels = this.makeNation(
+      this.namer.nationName(`rebels${nation.id}:${world.time.totalDays}`),
+      nation.x,
+      nation.z,
+      this.successorGovernment(nation),
+      world.time.totalDays,
+      false,
+    );
+    rebels.rebelAgainst = nation.id;
+    // Those who rose are a share of the people, and they are angry. A rising
+    // is not a levy: a far greater share of those who join it fight, because
+    // fighting is the whole reason they joined.
+    rebels.population = Math.max(10, nation.population * nation.unrest * 0.4);
+    rebels.army = rebels.population * 0.3;
+
+    // And some of the government's own soldiers go over. How many depends on
+    // how little right to rule the government is felt to have, which is why a
+    // regime nobody believes in cannot rely on its army to save it.
+    const defecting = nation.army * clamp01(1 - nation.legitimacy) * 0.5;
+    nation.army = Math.max(0, nation.army - defecting);
+    rebels.army += defecting;
+    rebels.unrest = 0.1;
+    rebels.legitimacy = 1 - nation.legitimacy;
+    rebels.stability = 0.5;
+    rebels.treasury = 0;
+    this.nations.push(rebels);
+
+    nation.inCivilWar = true;
+    // The state loses the people who left it.
+    nation.population = Math.max(1, nation.population - rebels.population);
+
+    world.diplomacy.declareWar(world, rebels, nation, 'independence');
+    world.log.add(world.time, 'settlement', 'ev.civilWar', {
+      nation: nation.name,
+      faction: rebels.name,
+    }, { notable: true, x: nation.x, z: nation.z });
+  }
+
+  /**
+   * A civil war has ended. Either the rebels are the government now, or they
+   * are nothing, and either way the country is one country again.
+   */
+  settleCivilWar(world: World, rebels: Nation, rebelsWon: boolean): void {
+    const state = this.byId(rebels.rebelAgainst);
+    if (state) {
+      state.inCivilWar = false;
+      // Whoever won, the country has just fought itself. It gets the same
+      // breathing space a revolution gets before it can happen again.
+      state.lastRegimeChangeDay = world.time.totalDays;
+      // The people come back either way; they have nowhere else to be.
+      state.population += rebels.population;
+
+      if (rebelsWon) {
+        state.government = rebels.government;
+        state.legitimacy = GOVERNMENTS[state.government].baseLegitimacy * 0.85;
+        state.unrest = clamp01(state.unrest * 0.3);
+        state.taxRate = clamp(state.taxRate * 0.6, 0.02, 0.6);
+        state.army += rebels.army;
+        this.succeed(world, state, 'deposed');
+        world.log.add(world.time, 'settlement', 'ev.civilWarWon', {
+          nation: state.name,
+          faction: rebels.name,
+        }, { notable: true, x: state.x, z: state.z });
+      } else {
+        state.unrest = clamp01(state.unrest * 0.25);
+        state.legitimacy = clamp01(state.legitimacy - 0.1);
+        world.log.add(world.time, 'settlement', 'ev.civilWarLost', {
+          nation: state.name,
+          faction: rebels.name,
+        }, { notable: true, x: state.x, z: state.z });
+      }
+    }
+
+    // The faction itself ceases to exist either way.
+    for (let i = 0; i < this.claims.length; i++) {
+      if (this.claims[i] === rebels.id) this.claims[i] = state ? state.id : 0;
+    }
+    const at = this.nations.indexOf(rebels);
+    if (at >= 0) this.nations.splice(at, 1);
   }
 
   /** Who ends up in charge follows from who was in charge before. */
@@ -905,6 +1027,7 @@ export class NationSystem {
           taxRate: clamp(num(raw.taxRate, 0.1), 0, 0.6),
           treasury: clamp(num(raw.treasury, 0), -1e7, 1e9),
           army: clamp(num(raw.army, 0), 0, 1e6),
+          rebelAgainst: Math.max(0, Math.round(num(raw.rebelAgainst, 0))),
           laws: new Set(
             (Array.isArray(raw.laws) ? raw.laws : []).filter((l: unknown): l is LawId =>
               lawIds.includes(l as LawId),

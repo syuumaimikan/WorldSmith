@@ -12,11 +12,18 @@ import { buildTestWorld, makeTestConfig } from './harness';
 import type { World } from '../sim/World';
 import { GOVERNMENTS, LAWS, Nation } from '../sim/Nations';
 
-/** Runs `days` of politics and nothing else. */
+/**
+ * Runs `days` of politics and nothing else.
+ *
+ * Diplomacy is part of politics: a civil war is fought through the same war
+ * machinery as any other, so leaving it out would mean risings that start and
+ * never finish.
+ */
 function runPolitics(world: World, days: number): void {
   for (let d = 0; d < days; d++) {
     world.time.advance(24 * 12);
     world.nations.update(world, 24);
+    world.diplomacy.update(world, 24);
   }
 }
 
@@ -230,14 +237,16 @@ describe('governing badly', () => {
     n.government = 'monarchy';
 
     // A rising that has just crossed the threshold, against a decisive throne
-    // with the whole levy behind it. A nation where all but everyone wants the
-    // government gone is a different matter, and is tested above.
+    // with an army several times the ordinary levy behind it. An evenly matched
+    // quarrel becomes a civil war instead, and a nation where all but everyone
+    // wants the government gone is swept away; both are tested elsewhere.
     const grumbling = (): void => {
       n.legitimacy = 0.55;
       n.unrest = 0.5;
       n.stability = 0.2;
       n.leader.competence = 1;
-      n.army = n.population;
+      n.population = 900;
+      n.army = 900 * 0.06 * 2.5;
       n.lastRegimeChangeDay = -99999;
     };
 
@@ -353,5 +362,126 @@ describe('the record', () => {
     expect(n.leader.cameBy).toBe('founding');
     // A claims array of the wrong length is ignored rather than half-applied.
     expect(world.nations.claims.length).toBe(world.nations.cells ** 2);
+  });
+});
+
+describe('civil war', () => {
+  /** A government that has lost its people but not yet its army. */
+  function contested(n: Nation): void {
+    n.taxRate = 0.55;
+    n.leader.cruelty = 0.95;
+    n.leader.competence = 1;
+    n.unrest = 0.95;
+    // High enough that the government is still worth fighting for, low enough
+    // that the rising has crossed the threshold: an evenly matched quarrel.
+    n.legitimacy = 0.7;
+    n.stability = 0.05;
+    n.population = 800;
+    n.army = 800 * 0.06;
+    n.lastRegimeChangeDay = -99999;
+  }
+
+  it('splits the country in two when the sides are evenly matched', () => {
+    const world = buildTestWorld();
+    const n = world.nations.nations.find((x) => !x.isPlayer)!;
+    contested(n);
+
+    for (let i = 0; i < 500 && !n.inCivilWar; i++) {
+      runPolitics(world, 5);
+      if (!n.inCivilWar) contested(n);
+    }
+    expect(n.inCivilWar).toBe(true);
+
+    // The faction is a polity of its own, fighting the country it came from.
+    const rebels = world.nations.nations.find((x) => x.rebelAgainst === n.id);
+    expect(rebels).toBeDefined();
+    expect(rebels!.population).toBeGreaterThan(0);
+    expect(rebels!.army).toBeGreaterThan(0);
+    expect(world.diplomacy.atWar(rebels!.id, n.id)).not.toBeNull();
+    expect(world.log.all().some((e) => e.key === 'ev.civilWar')).toBe(true);
+  });
+
+  it('takes some of the government’s own soldiers with it', () => {
+    const world = buildTestWorld();
+    const n = world.nations.nations.find((x) => !x.isPlayer)!;
+    contested(n);
+    n.legitimacy = 0.1; // almost nobody believes in it
+    const before = n.army;
+
+    for (let i = 0; i < 500 && !n.inCivilWar; i++) {
+      runPolitics(world, 5);
+      if (!n.inCivilWar) {
+        contested(n);
+        n.legitimacy = 0.1;
+      }
+    }
+    expect(n.inCivilWar).toBe(true);
+    expect(n.army).toBeLessThan(before);
+  });
+
+  it('ends with one country again, and no faction left over', () => {
+    const world = buildTestWorld();
+    const n = world.nations.nations.find((x) => !x.isPlayer)!;
+    contested(n);
+    for (let i = 0; i < 500 && !n.inCivilWar; i++) {
+      runPolitics(world, 5);
+      if (!n.inCivilWar) contested(n);
+    }
+    expect(n.inCivilWar).toBe(true);
+    // Follow this particular faction. The country may well fight itself again
+    // later, so the flag alone is not what is being claimed here.
+    const rebels = world.nations.nations.find((x) => x.rebelAgainst === n.id)!;
+    const government = n.government;
+
+    let settled = false;
+    for (let i = 0; i < 600 && !settled; i++) {
+      runPolitics(world, 5);
+      settled = !world.nations.nations.some((x) => x.id === rebels.id);
+    }
+
+    expect(settled).toBe(true);
+    expect(world.diplomacy.wars.some((w) => w.attacker === rebels.id)).toBe(false);
+    // Won or lost, it is settled, and the country is one country again.
+    const won = world.log.all().some((e) => e.key === 'ev.civilWarWon');
+    const lost = world.log.all().some((e) => e.key === 'ev.civilWarLost');
+    expect(won || lost).toBe(true);
+    if (won) expect(n.government).not.toBe(government);
+  });
+
+  it('leaves no faction stranded if the war stops some other way', () => {
+    const world = buildTestWorld();
+    const n = world.nations.nations.find((x) => !x.isPlayer)!;
+    contested(n);
+    for (let i = 0; i < 500 && !n.inCivilWar; i++) {
+      runPolitics(world, 5);
+      if (!n.inCivilWar) contested(n);
+    }
+    const rebels = world.nations.nations.find((x) => x.rebelAgainst === n.id)!;
+
+    // Tear the war out from under them, as a conquest of the parent would.
+    const war = world.diplomacy.atWar(rebels.id, n.id)!;
+    world.diplomacy.wars.splice(world.diplomacy.wars.indexOf(war), 1);
+
+    runPolitics(world, 5);
+    expect(world.nations.nations.some((x) => x.id === rebels.id)).toBe(false);
+    expect(n.inCivilWar).toBe(false);
+  });
+
+  it('a faction is never invaded by a foreign power as though it were a country', () => {
+    const world = buildTestWorld();
+    const n = world.nations.nations.find((x) => !x.isPlayer)!;
+    contested(n);
+    for (let i = 0; i < 500 && !n.inCivilWar; i++) {
+      runPolitics(world, 5);
+      if (!n.inCivilWar) contested(n);
+    }
+    const rebels = world.nations.nations.find((x) => x.rebelAgainst === n.id)!;
+    for (let i = 0; i < 60; i++) runPolitics(world, 5);
+
+    for (const w of world.diplomacy.wars) {
+      if (w.attacker !== rebels.id && w.defender !== rebels.id) continue;
+      // The only war a faction is in is its own.
+      expect(w.goal).toBe('independence');
+    }
   });
 });
