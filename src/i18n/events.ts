@@ -59,6 +59,7 @@ const RESOLVERS: Record<string, Record<string, Resolver>> = {
   'ev.weatherTurns': { weather: asWeather },
   'ev.promoted': { tier: asTier },
   'ev.discovered': { lore: asLore },
+  'ev.revolution': { from: (v) => t(v), to: (v) => t(v) },
   'ev.repaired': { name: asBuilding },
   'event.eruption': { name: (v) => v },
 };

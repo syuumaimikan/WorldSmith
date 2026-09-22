@@ -93,6 +93,20 @@ export class Economy {
     }
   }
 
+  /**
+   * What the settlement actually made today, valued at what it is worth. This
+   * is what a tax is taken out of: a share of real goods, not of a number that
+   * was invented to be taxed.
+   */
+  dailyOutput(): number {
+    let total = 0;
+    for (const [id, stat] of this.stats) {
+      if (stat.produced <= 0) continue;
+      total += stat.produced * ITEMS[id].value;
+    }
+    return total;
+  }
+
   priceOf(id: ItemId): number {
     return Math.max(1, Math.round(this.statOf(id).price));
   }

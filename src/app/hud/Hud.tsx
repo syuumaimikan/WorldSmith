@@ -33,6 +33,7 @@ export type PanelId =
   | 'map'
   | 'climate'
   | 'sky'
+  | 'nation'
   | 'chronicle'
   | 'menu';
 
@@ -184,6 +185,7 @@ export function Hud({
           <ToolButton label={t('hud.map')} hotkey="M" active={panel === 'map'} onClick={() => onOpenPanel('map')} />
           <ToolButton label={t('hud.climate')} hotkey="K" active={panel === 'climate'} onClick={() => onOpenPanel('climate')} />
           <ToolButton label={t('hud.sky')} hotkey="N" active={panel === 'sky'} onClick={() => onOpenPanel('sky')} />
+          <ToolButton label={t('hud.nation')} hotkey="L" active={panel === 'nation'} onClick={() => onOpenPanel('nation')} />
           <ToolButton label={t('hud.chronicle')} hotkey="" active={panel === 'chronicle'} onClick={() => onOpenPanel('chronicle')} />
         </div>
         <div className="tiny muted mono" style={{ textAlign: 'right' }}>
