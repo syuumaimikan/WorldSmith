@@ -43,6 +43,7 @@ import { DisasterManager } from './Disasters';
 import { DisasterDirector } from './DisasterDirector';
 import { DiseaseSystem } from './Disease';
 import { Tectonics } from './Tectonics';
+import { Astronomy } from './Astronomy';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
@@ -115,6 +116,7 @@ export class World {
   readonly disasters: DisasterManager;
   readonly director: DisasterDirector;
   readonly tectonics: Tectonics;
+  readonly astronomy: Astronomy;
   readonly disease: DiseaseSystem;
   /**
    * How hard the settlement is rationing, 0 when there is plenty. A famine is
@@ -142,6 +144,8 @@ export class World {
   private mineOre = new Map<number, ItemId[]>();
   /** Throttles repeated ashfall messages during a long eruption. */
   private lastAshReport = -99;
+  /** Day a meteor shower was last reported, so it is announced once. */
+  private lastShowerDay = -1;
   /** Game hours of weather owed to the atmosphere since it last stepped. */
   private climateAccum = 0;
   /** Running totals, for the chronicle and the statistics screens. */
@@ -181,6 +185,7 @@ export class World {
     this.tectonics = new Tectonics(terrain, config.seed, (i) =>
       this.namer.featureName('region', `plate${i}`),
     );
+    this.astronomy = new Astronomy(config.seed, this.namer);
     this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
@@ -1683,12 +1688,42 @@ export class World {
     this.climate.update(this.time, hours);
     this.storms.update(this, hours);
     this.tectonics.update(this, hours);
+    this.updateSky();
     this.director.update(this, hours);
     this.disease.update(this, hours);
     this.updateFamine(hours);
     this.resolveLightning();
     this.reportClimate();
     this.applyMeltwater(hours);
+  }
+
+  /**
+   * Keeps the eclipse forecast current and tells the world about what it can
+   * see coming. A people who watch the sky know an eclipse is due; they are
+   * not surprised by one, and neither is the chronicle.
+   */
+  private updateSky(): void {
+    this.astronomy.update(this.time);
+    const day = this.time.totalDays;
+    for (const e of this.astronomy.eclipses) {
+      if (e.announced || e.day > day) continue;
+      e.announced = true;
+      this.log.add(
+        this.time,
+        'discovery',
+        e.kind === 'solar' ? 'ev.solarEclipse' : 'ev.lunarEclipse',
+        { percent: Math.round(e.magnitude * 100) },
+        { notable: true },
+      );
+    }
+
+    const moment = this.astronomy.at(this.time);
+    if (moment.shower && moment.meteorRate > 20 && this.lastShowerDay !== day) {
+      this.lastShowerDay = day;
+      this.log.add(this.time, 'discovery', 'ev.meteorShower', { name: moment.shower.name }, {
+        notable: true,
+      });
+    }
   }
 
   /** Where the weather is being watched from: the player, or a possessed body. */

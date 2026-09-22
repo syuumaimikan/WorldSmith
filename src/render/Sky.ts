@@ -7,10 +7,7 @@
  */
 
 import {
-  AdditiveBlending,
   BackSide,
-  BufferAttribute,
-  BufferGeometry,
   Color,
   DirectionalLight,
   FogExp2,
@@ -20,8 +17,6 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
-  Points,
-  PointsMaterial,
   Quaternion,
   Scene,
   ShaderMaterial,
@@ -85,6 +80,32 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
 }`;
 
+const MOON_VERT = `
+varying vec3 vNormal;
+void main() {
+  vNormal = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const MOON_FRAG = `
+varying vec3 vNormal;
+uniform vec3 uSunDir;
+uniform vec3 uLit;
+uniform vec3 uDark;
+uniform float uOpacity;
+uniform float uEclipse;
+void main() {
+  // Straight Lambert against the sun: this is the phase, not a texture of one.
+  float lit = dot(normalize(vNormal), normalize(uSunDir));
+  float f = smoothstep(-0.06, 0.06, lit);
+  vec3 col = mix(uDark, uLit, f);
+  // A moon in the world's shadow goes the colour of every sunset at once.
+  col = mix(col, vec3(0.42, 0.11, 0.08), uEclipse);
+  gl_FragColor = vec4(col, uOpacity);
+}
+`;
+
 export class SkySystem {
   readonly sun: DirectionalLight;
   readonly hemi: HemisphereLight;
@@ -96,11 +117,13 @@ export class SkySystem {
   private domeMat: ShaderMaterial;
   private sunDisc: Mesh;
   private moonDisc: Mesh;
+  private moonMaterial: ShaderMaterial;
+  /** Where the moon actually is, set by the astronomy each frame. */
+  readonly moonDirection = new Vector3(0, -1, 0);
   private clouds: InstancedMesh;
   private cloudBase: { x: number; y: number; z: number; s: number; r: number }[] = [];
   private cloudDrift = 0;
-  private stars: Points;
-  private starMat: PointsMaterial;
+
   private fog: FogExp2;
 
   private horizonColor = new Color();
@@ -114,6 +137,10 @@ export class SkySystem {
 
   /** 0 at night, 1 in full day. Read by gameplay for lamp lighting etc. */
   daylight = 1;
+  /** 0..1 how much of the moon's disc is lit, set from the astronomy. */
+  moonBrightness = 0;
+  /** 0..1 how much of the sun is currently covered. */
+  private solarEclipse = 0;
   cloudCover = 0.2;
 
   constructor(scene: Scene, seed: number, worldSize: number) {
@@ -171,8 +198,23 @@ export class SkySystem {
     this.sunDisc.renderOrder = -999;
     scene.add(this.sunDisc);
 
-    const moonMat = new MeshBasicMaterial({ color: 0xe8eefc, fog: false, depthWrite: false });
-    this.moonDisc = new Mesh(new SphereGeometry(22, 10, 8), moonMat);
+    // The moon is a sphere lit from wherever the sun is, so the phase is not
+    // drawn: it is what you get when you light a ball from one side.
+    this.moonMaterial = new ShaderMaterial({
+      vertexShader: MOON_VERT,
+      fragmentShader: MOON_FRAG,
+      uniforms: {
+        uSunDir: { value: new Vector3(1, 0, 0) },
+        uLit: { value: new Color(0xe8eefc) },
+        uDark: { value: new Color(0x11151f) },
+        uOpacity: { value: 1 },
+        uEclipse: { value: 0 },
+      },
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+    });
+    this.moonDisc = new Mesh(new SphereGeometry(26, 24, 18), this.moonMaterial);
     this.moonDisc.frustumCulled = false;
     this.moonDisc.renderOrder = -999;
     scene.add(this.moonDisc);
@@ -204,35 +246,15 @@ export class SkySystem {
       });
     }
 
-    // -------------------------------------------------------------- stars
-    const starCount = 900;
-    const starPos = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount; i++) {
-      // Upper hemisphere only.
-      const u = rng.range(-1, 1);
-      const phi = rng.range(0, TAU);
-      const r = Math.sqrt(1 - u * u);
-      const y = Math.abs(u) * 0.9 + 0.08;
-      starPos[i * 3] = Math.cos(phi) * r * 2400;
-      starPos[i * 3 + 1] = y * 2400;
-      starPos[i * 3 + 2] = Math.sin(phi) * r * 2400;
-    }
-    const starGeo = new BufferGeometry();
-    starGeo.setAttribute('position', new BufferAttribute(starPos, 3));
-    this.starMat = new PointsMaterial({
-      color: 0xffffff,
-      size: 9,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      blending: AdditiveBlending,
-      fog: false,
-    });
-    this.stars = new Points(starGeo, this.starMat);
-    this.stars.frustumCulled = false;
-    this.stars.renderOrder = -995;
-    scene.add(this.stars);
+  }
+
+  /**
+   * Darkens the sun, or reddens the moon, while a real eclipse is under way.
+   */
+  setEclipse(eclipse: { kind: 'solar' | 'lunar'; magnitude: number } | null): void {
+    this.solarEclipse = eclipse?.kind === 'solar' ? eclipse.magnitude : 0;
+    this.moonMaterial.uniforms.uEclipse.value =
+      eclipse?.kind === 'lunar' ? eclipse.magnitude : 0;
   }
 
   /**
@@ -299,7 +321,9 @@ export class SkySystem {
     this.fog.density = (0.00085 + (1 - day) * 0.0005) * fogScale;
 
     // -------------------------------------------------------------- lights
-    const sunIntensity = Math.max(0, day) * 1.35 * sunScale;
+    // An eclipse takes the sun away as surely as a cloud does, and faster.
+    const eclipseDim = 1 - this.solarEclipse * 0.92;
+    const sunIntensity = Math.max(0, day) * 1.35 * sunScale * eclipseDim;
     this.sun.intensity = sunIntensity;
     this.sun.color.copy(this.tmpColor2).lerp(this.tmpColor, clamp01(day * 1.4));
     this.sun.position
@@ -309,8 +333,11 @@ export class SkySystem {
     this.sun.target.updateMatrixWorld();
     this.sun.visible = sunIntensity > 0.01;
 
-    this.moon.intensity = night * 0.24;
-    this.moon.position.copy(focus).addScaledVector(this.sunDirection, -190);
+    // Moonlight comes from where the moon is and is only as strong as the
+    // lit fraction of it: a new moon lights nothing at all.
+    const moonUp = this.moonDirection.y > 0;
+    this.moon.intensity = night * 0.42 * this.moonBrightness * (moonUp ? 1 : 0.08);
+    this.moon.position.copy(focus).addScaledVector(this.moonDirection, 190);
     this.moon.target.position.copy(focus);
     this.moon.target.updateMatrixWorld();
     this.moon.visible = this.moon.intensity > 0.005;
@@ -330,12 +357,12 @@ export class SkySystem {
       .copy(this.tmpColor2)
       .lerp(this.tmpColor, clamp01(day * 1.4));
 
-    this.moonDisc.position.copy(focus).addScaledVector(this.sunDirection, -2200);
-    this.moonDisc.visible = elev < 0.12;
+    // The moon goes where the astronomy puts it, not opposite the sun.
+    this.moonDisc.position.copy(focus).addScaledVector(this.moonDirection, 2200);
+    this.moonDisc.visible = this.moonDirection.y > -0.08 && night > 0.02;
+    this.moonMaterial.uniforms.uSunDir.value.copy(this.sunDirection);
+    this.moonMaterial.uniforms.uOpacity.value = clamp01(night * 1.6) * (1 - cloudCover * 0.8);
 
-    this.starMat.opacity = night * 0.85 * (1 - cloudCover * 0.7);
-    this.stars.position.copy(focus);
-    this.stars.visible = this.starMat.opacity > 0.01;
 
     this.updateClouds(focus, cloudCover, day, dt);
   }
@@ -372,14 +399,13 @@ export class SkySystem {
   }
 
   dispose(): void {
-    this.scene.remove(this.dome, this.sunDisc, this.moonDisc, this.clouds, this.stars);
+    this.scene.remove(this.dome, this.sunDisc, this.moonDisc, this.clouds);
     this.scene.remove(this.sun, this.sun.target, this.moon, this.moon.target, this.hemi);
     this.dome.geometry.dispose();
     this.domeMat.dispose();
     this.clouds.geometry.dispose();
     (this.clouds.material as MeshLambertMaterial).dispose();
-    this.stars.geometry.dispose();
-    this.starMat.dispose();
+    this.moonMaterial.dispose();
   }
 }
 

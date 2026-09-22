@@ -36,6 +36,7 @@ import { Overlay, OverlayRenderer } from '../render/OverlayRenderer';
 import { AudioEngine } from '../audio/AudioEngine';
 import { GodMode } from './GodMode';
 import { BrushPreview } from '../render/BrushPreview';
+import { StarField } from '../render/StarField';
 import { t } from '../i18n';
 import { professionColour, ProfessionId } from '../data/professions';
 import type { WeatherKind } from '../sim/Weather';
@@ -108,6 +109,7 @@ export class Game {
   readonly audio: AudioEngine;
   readonly god: GodMode;
   readonly brush: BrushPreview;
+  readonly stars: StarField;
 
   settings: GameSettings;
   /** Set by the UI when a modal panel wants exclusive keyboard input. */
@@ -179,6 +181,7 @@ export class Game {
     this.audio = new AudioEngine(settings.masterVolume);
     this.god = new GodMode(world);
     this.brush = new BrushPreview(this.scene);
+    this.stars = new StarField(this.scene, world.astronomy, Math.min(2, window.devicePixelRatio || 1));
 
     const look = lookFor(PALETTE.cloak.player, world.config.seed, PALETTE.cloak.playerTrim);
     this.playerRig = new CharacterRig(look, this.charMaterial);
@@ -706,7 +709,23 @@ export class Game {
       weatherBlend: world.weather.blend,
       daylightSkew: world.time.daylightSkew(),
     };
+    // Where the moon actually is tonight, and how much of it is lit.
+    const moment = world.astronomy.at(world.time);
+    this.sky.moonBrightness = moment.moonIllumination;
+    this.sky.moonDirection
+      .set(Math.cos(moment.moonAzimuth), moment.moonAltitude * 1.05, -0.3)
+      .normalize();
+    this.sky.setEclipse(moment.eclipse);
     this.sky.update(skyState, camPos, dt);
+
+    this.stars.update(
+      camPos,
+      snap.totalHours / 24,
+      1 - this.sky.daylight,
+      this.sky.cloudCover,
+      moment.meteorRate,
+      dt,
+    );
 
     this.terrainRenderer.update(camPos, dt, 4);
     this.vegetation.update(world.nodes, camPos);
@@ -887,6 +906,7 @@ export class Game {
   dispose(): void {
     this.stop();
     this.input.detach();
+    this.stars.dispose();
     this.brush.dispose();
     this.build.dispose();
     this.overlays.dispose();

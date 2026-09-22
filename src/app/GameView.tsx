@@ -11,6 +11,7 @@ import { ResearchPanel } from './panels/ResearchPanel';
 import { ProductionPanel } from './panels/ProductionPanel';
 import { MapPanel } from './panels/MapPanel';
 import { ClimatePanel } from './panels/ClimatePanel';
+import { SkyPanel } from './panels/SkyPanel';
 import { ChroniclePanel } from './panels/ChroniclePanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { PausePanel } from './panels/PausePanel';
@@ -36,6 +37,7 @@ const MODAL_PANELS: PanelId[] = [
   'production',
   'map',
   'climate',
+  'sky',
   'chronicle',
   'menu',
 ];
@@ -154,6 +156,9 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
         case 'KeyK':
           togglePanel('climate');
           break;
+        case 'KeyN':
+          togglePanel('sky');
+          break;
         case 'F1':
           e.preventDefault();
           setShowDebug((v) => !v);
@@ -230,6 +235,7 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
           {panel === 'production' && <ProductionPanel game={game} onClose={closePanel} />}
           {panel === 'map' && <MapPanel game={game} onClose={closePanel} />}
           {panel === 'climate' && <ClimatePanel game={game} onClose={closePanel} />}
+          {panel === 'sky' && <SkyPanel game={game} onClose={closePanel} />}
           {panel === 'chronicle' && <ChroniclePanel game={game} onClose={closePanel} />}
           {panel === 'menu' && (
             <PausePanel
