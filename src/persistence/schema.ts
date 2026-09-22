@@ -83,6 +83,10 @@ export interface SavedBuilding {
   activeRecipe: string | null;
   paused: boolean;
   priority: number;
+  repairNeeded?: boolean;
+  repairWork?: number;
+  repairBill?: Record<string, number>;
+  repairMaterialsConsumed?: boolean;
   fields?: { tx: number; tz: number; crop: string; growth: number; watered: number; planted: boolean }[];
 }
 
@@ -126,6 +130,8 @@ export interface SaveData {
   climate: Record<string, unknown>;
   storms: Record<string, unknown>;
   disasters: Record<string, unknown>;
+  director: Record<string, unknown>;
+  disease: Record<string, unknown>;
   volcanoes: SavedVolcano[];
   economy: Record<string, unknown>;
   wildlife: { id: number; species: string; x: number; z: number; age: number }[];
@@ -186,6 +192,8 @@ export function migrate(raw: AnySave): SaveData {
     data.climate = data.climate ?? {};
     data.storms = data.storms ?? {};
     data.disasters = data.disasters ?? {};
+    data.director = data.director ?? {};
+    data.disease = data.disease ?? {};
     data.volcanoes = data.volcanoes ?? [];
     data.possessed = 0;
     data.lightningStrikes = 0;

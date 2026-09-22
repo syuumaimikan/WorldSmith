@@ -72,6 +72,12 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
                     building: b ? buildingName(b.defId) : '?',
                     stage: b?.currentStage ? stageName(b.currentStage.id, b.currentStage.name) : '',
                   });
+                } else if (j.kind === 'repair') {
+                  const b = world.buildingById.get(j.buildingId);
+                  label = t('jobs.repairJob', {
+                    building: b ? buildingName(b.defId) : '?',
+                    percent: b ? Math.round(b.condition * 100) : 0,
+                  });
                 } else {
                   const b = world.buildingById.get(j.buildingId);
                   label = t('jobs.demolishJob', { building: b ? buildingName(b.defId) : '?' });

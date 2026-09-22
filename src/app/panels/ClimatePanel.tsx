@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Game } from '../../game/Game';
-import { EmptyNote, Pill, Tabs, Window } from '../components/common';
+import { Bar, EmptyNote, Pill, Tabs, Window } from '../components/common';
 import { hexToCss, mixHex, PALETTE } from '../../render/Palette';
 import { clamp01 } from '../../core/math';
 import { useT } from '../../i18n';
@@ -10,7 +10,7 @@ interface Props {
   onClose: () => void;
 }
 
-type ClimateTab = 'now' | 'map' | 'history';
+type ClimateTab = 'now' | 'map' | 'hazards' | 'history';
 type MapField = 'temperature' | 'precipitation' | 'wind' | 'snowpack';
 
 const MAP_PX = 460;
@@ -26,6 +26,7 @@ export function ClimatePanel({ game, onClose }: Props): JSX.Element {
         tabs={[
           { id: 'now', label: t('climate.tab.now') },
           { id: 'map', label: t('climate.tab.map') },
+          { id: 'hazards', label: t('climate.tab.hazards') },
           { id: 'history', label: t('climate.tab.history') },
         ]}
         active={tab}
@@ -33,6 +34,7 @@ export function ClimatePanel({ game, onClose }: Props): JSX.Element {
       />
       {tab === 'now' && <NowTab game={game} />}
       {tab === 'map' && <MapTab game={game} field={field} onField={setField} />}
+      {tab === 'hazards' && <HazardTab game={game} />}
       {tab === 'history' && <HistoryTab game={game} />}
     </Window>
   );
@@ -257,6 +259,105 @@ function rampFor(field: MapField, s: number): number {
     default:
       return mixHex(0x2c3340, 0xd8d066, s);
   }
+}
+
+// ------------------------------------------------------------- the hazards
+
+function HazardTab({ game }: { game: Game }): JSX.Element {
+  const t = useT();
+  const world = game.world;
+  const director = world.director;
+  const risks = [...director.risks.values()].sort((a, b) => b.risk - a.risk);
+  const history = [...director.history].reverse().slice(0, 20);
+  const byId = new Map(director.history.map((d) => [d.id, d]));
+
+  return (
+    <>
+      <div className="section-label" style={{ marginTop: 0 }}>
+        {t('risk.title')}
+      </div>
+      {risks.length === 0 || risks[0].risk < 0.05 ? (
+        <EmptyNote>{t('risk.none')}</EmptyNote>
+      ) : (
+        <div className="list">
+          {risks.map((r) => (
+            <div className="list-row" key={r.kind} style={{ gridTemplateColumns: '1fr 120px' }}>
+              <span>
+                {t('risk.level', {
+                  hazard: t(`hazard.${r.kind}`),
+                  percent: Math.round(r.risk * 100),
+                  cause: t(r.cause),
+                })}
+              </span>
+              <Bar
+                value={r.risk}
+                color={hexToCss(mixHex(PALETTE.ui.good, PALETTE.ui.bad, clamp01(r.risk)))}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="section-label">{t('risk.record')}</div>
+      {history.length === 0 ? (
+        <EmptyNote>{t('risk.noneYet')}</EmptyNote>
+      ) : (
+        <div className="list">
+          {history.map((d) => {
+            const parent = d.causedBy ? byId.get(d.causedBy) : undefined;
+            return (
+              <button
+                key={d.id}
+                className="list-row"
+                style={{ gridTemplateColumns: '70px 1fr 90px', textAlign: 'left' }}
+                onClick={() => game.lookAt(d.x, d.z)}
+              >
+                <span className="mono tiny muted">{t('risk.day', { day: d.day })}</span>
+                <span>
+                  {t(`hazard.${d.kind}`)}
+                  {parent && (
+                    <span className="tiny muted">
+                      {' '}
+                      · {t('risk.caused', { hazard: t(`hazard.${parent.kind}`) })}
+                    </span>
+                  )}
+                </span>
+                <Pill tone={d.severity > 0.7 ? 'bad' : d.severity > 0.4 ? 'warn' : undefined}>
+                  {Math.round(d.severity * 100)}%
+                </Pill>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="section-label">{t('risk.health')}</div>
+      <div className="stat-grid">
+        <Reading label={t('risk.ill')} value={String(world.disease.activeCases)} />
+        <Reading
+          label={t('risk.sanitation')}
+          value={`${Math.round(world.sanitationQuality() * 100)} %`}
+        />
+        <Reading
+          label={t('risk.foodDays')}
+          value={`${world.foodDaysRemaining().toFixed(1)}`}
+        />
+        <Reading
+          label={t('risk.famine')}
+          value={world.famineSeverity > 0 ? `${Math.round(world.famineSeverity * 100)} %` : '—'}
+        />
+      </div>
+      {world.disease.liveOutbreak && (
+        <div className="tiny muted" style={{ marginTop: 6 }}>
+          {t('risk.outbreak', {
+            name: world.disease.liveOutbreak.name,
+            cases: world.disease.liveOutbreak.infections.size,
+            deaths: world.disease.liveOutbreak.deaths,
+          })}
+        </div>
+      )}
+    </>
+  );
 }
 
 // -------------------------------------------------------------- the record

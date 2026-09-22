@@ -65,6 +65,8 @@ export function serializeWorld(world: World, id: string): SaveData {
     climate: world.climate.serialize(),
     storms: world.storms.serialize(),
     disasters: world.disasters.serialize(),
+    director: world.director.serialize(),
+    disease: world.disease.serialize(),
     volcanoes: world.volcanoes.map((v) => ({ ...v })),
     economy: world.economy.serialize(),
     wildlife: world.serializeWildlife(),
@@ -146,6 +148,8 @@ export function deserializeWorld(data: SaveData): World {
   world.climate.restore(data.climate);
   world.storms.restore(data.storms);
   world.disasters.restore(data.disasters, world);
+  world.director.restore(data.director);
+  world.disease.restore(data.disease);
   world.restoreVolcanoes(data.volcanoes ?? []);
   world.economy.restore(data.economy);
   world.deserializeWildlife(data.wildlife ?? []);

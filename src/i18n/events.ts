@@ -53,6 +53,7 @@ const RESOLVERS: Record<string, Record<string, Resolver>> = {
   'ev.seasonArrives': { season: asSeason },
   'ev.weatherTurns': { weather: asWeather },
   'ev.promoted': { tier: asTier },
+  'ev.repaired': { name: asBuilding },
   'event.eruption': { name: (v) => v },
 };
 

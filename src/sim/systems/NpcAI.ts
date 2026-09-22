@@ -229,16 +229,15 @@ function assignWork(world: World, npc: Npc): void {
 
 function tryClaimJob(world: World, npc: Npc): boolean {
   const canDo = (job: Job): boolean => {
-    if (job.kind === 'build' || job.kind === 'demolish') {
-      // Anyone can lend a hand, but only if they are not already needed
-      // elsewhere; profession affinity sorts that out in scoring.
+    if (job.kind !== 'haul') {
+      // Anyone can lend a hand with building, repair or demolition; profession
+      // affinity sorts out who actually should in the scoring below.
       return true;
     }
-    const h = job as HaulJob;
-    return npc.inventory.spaceFor(h.item) > 0;
+    return npc.inventory.spaceFor(job.item) > 0;
   };
   const affinity = (job: Job): number => {
-    if (job.kind === 'build' || job.kind === 'demolish') {
+    if (job.kind === 'build' || job.kind === 'repair' || job.kind === 'demolish') {
       return npc.profession === 'builder' ? 1.4 : npc.profession === 'settler' ? 0.6 : 0.15;
     }
     return npc.profession === 'hauler' ? 1.4 : npc.profession === 'settler' ? 0.55 : 0.2;
@@ -249,6 +248,8 @@ function tryClaimJob(world: World, npc: Npc): boolean {
 
   if (job.kind === 'build') {
     npc.setTask('build', { jobId: job.id, targetId: job.buildingId, x: job.x, z: job.z });
+  } else if (job.kind === 'repair') {
+    npc.setTask('repair', { jobId: job.id, targetId: job.buildingId, x: job.x, z: job.z });
   } else if (job.kind === 'demolish') {
     npc.setTask('demolish', { jobId: job.id, targetId: job.buildingId, x: job.x, z: job.z });
   } else {
@@ -368,6 +369,9 @@ function executeTask(world: World, npc: Npc, dt: number): void {
   switch (task.type) {
     case 'haul':
       executeHaul(world, npc, dt);
+      break;
+    case 'repair':
+      executeRepair(world, npc, dt);
       break;
     case 'build':
       executeBuild(world, npc, dt);
@@ -519,7 +523,9 @@ function executeHaul(world: World, npc: Npc, dt: number): void {
   npc.activity = 'hauling';
   if (!arriveAt(world, npc, dp.x, dp.z)) return;
 
-  const store = job.toSite && !dest.complete ? dest.siteStore : dest.inventory;
+  // Materials for construction, and for a repair, go to the site store; a
+  // finished building's own inventory is its stock, not its scaffolding.
+  const store = job.toSite && (!dest.complete || dest.repairNeeded) ? dest.siteStore : dest.inventory;
   const moved = npc.inventory.transferTo(store, job.item, npc.inventory.count(job.item));
   npc.addXp('hauling', moved * 1.4);
 
@@ -602,6 +608,48 @@ function executeBuild(world: World, npc: Npc, dt: number): void {
   } else if (result === 'stage') {
     world.onStageCompleted(b);
     if (npc.task.jobId) world.jobs.release(npc.task.jobId);
+    npc.clearTask();
+  }
+}
+
+/**
+ * Putting a damaged building back together.
+ *
+ * Deliberately the same shape as new construction: walk there, spend the
+ * materials that were hauled in, then swing a hammer for as long as the
+ * damage warrants. A building is never restored by the passage of time.
+ */
+function executeRepair(world: World, npc: Npc, dt: number): void {
+  const b = world.buildingById.get(npc.task.targetId);
+  if (!b || !b.repairNeeded || b.demolishing) {
+    if (npc.task.jobId) world.jobs.remove(npc.task.jobId);
+    npc.clearTask();
+    return;
+  }
+
+  const p = b.accessPoint(world.terrain.tileSize);
+  npc.activity = 'walking';
+  if (!arriveAt(world, npc, p.x, p.z, 2.0)) return;
+
+  if (!b.consumeRepairMaterials()) {
+    // The materials were taken for something else. Let someone re-haul them.
+    if (npc.task.jobId) world.jobs.release(npc.task.jobId);
+    npc.clearTask();
+    return;
+  }
+
+  npc.activity = 'building';
+  npc.workAnim = true;
+  faceToward(npc, b.worldX, b.worldZ);
+
+  const tool = npc.tool === 'hammer' ? 1.35 : 1;
+  const amount = BUILD_RATE * npc.workRate('construction', tool) * world.weather.workPenalty * dt;
+  npc.addXp('construction', amount * 0.5);
+
+  if (world.applyRepair(b, amount)) {
+    world.onBuildingRepaired(b, npc);
+    if (npc.task.jobId) world.jobs.remove(npc.task.jobId);
+    npc.remember(world.time.totalDays, 'memory.repaired');
     npc.clearTask();
   }
 }

@@ -58,6 +58,7 @@ export type TaskType =
   | 'none'
   | 'haul'
   | 'build'
+  | 'repair'
   | 'demolish'
   | 'gather'
   | 'produce'

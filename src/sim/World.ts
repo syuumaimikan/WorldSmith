@@ -40,6 +40,8 @@ import { updateNpc } from './systems/NpcAI';
 import { updateAnimals } from './systems/WildlifeAI';
 import { TerrainEditor } from '../world/TerrainEdit';
 import { DisasterManager } from './Disasters';
+import { DisasterDirector } from './DisasterDirector';
+import { DiseaseSystem } from './Disease';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
@@ -110,6 +112,14 @@ export class World {
   readonly economy = new Economy();
   readonly editor: TerrainEditor;
   readonly disasters: DisasterManager;
+  readonly director: DisasterDirector;
+  readonly disease: DiseaseSystem;
+  /**
+   * How hard the settlement is rationing, 0 when there is plenty. A famine is
+   * not an effect applied to people; it is the state of there being nothing to
+   * eat, and this is only how severe that has got.
+   */
+  famineSeverity = 0;
 
   /** Per-tile exploration mask driving fog of war on the world map. */
   readonly explored: Uint8Array;
@@ -135,6 +145,9 @@ export class World {
   /** Running totals, for the chronicle and the statistics screens. */
   lightningStrikes = 0;
   snowmeltCarried = 0;
+  /** Cached share of steep dry land; recomputed when the terrain is edited. */
+  private steepFraction = 0;
+  private steepFractionDirty = true;
 
   constructor(
     config: WorldConfig,
@@ -162,6 +175,8 @@ export class World {
     this.settlement = new Settlement(config.name, startX, startZ);
     this.editor = new TerrainEditor(terrain);
     this.disasters = new DisasterManager(config.seed);
+    this.director = new DisasterDirector(config.seed);
+    this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
     for (const n of nodes) if (n.id >= this.nextEntityId) this.nextEntityId = n.id + 1;
@@ -1601,7 +1616,7 @@ export class World {
 
     if (b.complete && b.condition < 0.72 && !b.repairNeeded) {
       b.repairNeeded = true;
-      b.repairWork = 0;
+      b.computeRepairBill();
       this.log.add(this.time, 'disaster', 'event.buildingDamaged', { name: b.defId }, {
         x: b.worldX,
         z: b.worldZ,
@@ -1617,8 +1632,18 @@ export class World {
     if (b.repairWork < b.repairWorkRequired) return false;
     b.repairWork = 0;
     b.repairNeeded = false;
+    b.repairMaterialsConsumed = false;
+    b.repairBill = {};
     b.condition = 1;
     return true;
+  }
+
+  /** A building is sound again. */
+  onBuildingRepaired(b: Building, by: Npc): void {
+    this.log.add(this.time, 'settlement', 'ev.repaired', { name: b.defId, who: by.name }, {
+      x: b.worldX,
+      z: b.worldZ,
+    });
   }
 
   /**
@@ -1652,6 +1677,9 @@ export class World {
   stepAtmosphere(hours: number): void {
     this.climate.update(this.time, hours);
     this.storms.update(this, hours);
+    this.director.update(this, hours);
+    this.disease.update(this, hours);
+    this.updateFamine(hours);
     this.resolveLightning();
     this.reportClimate();
     this.applyMeltwater(hours);
@@ -1703,6 +1731,188 @@ export class World {
     this.snowmeltCarried += melt;
   }
 
+  // =====================================================================
+  // Readings the disaster director takes off the world
+  // =====================================================================
+
+  /** The ground has been reshaped, so anything measured off it is stale. */
+  markTerrainChanged(): void {
+    this.steepFractionDirty = true;
+  }
+
+  /** Fraction of dry land steep enough to slide. Cached; terrain rarely moves. */
+  steepGroundFraction(): number {
+    if (this.steepFractionDirty) {
+      const t = this.terrain;
+      let steep = 0;
+      let land = 0;
+      for (let i = 0; i < t.data.slope.length; i += 7) {
+        if (t.waterHeight[i] > t.data.height[i]) continue;
+        land++;
+        if (t.data.slope[i] > 0.55) steep++;
+      }
+      this.steepFraction = land > 0 ? steep / land : 0;
+      this.steepFractionDirty = false;
+    }
+    return this.steepFraction;
+  }
+
+  /** Days of food left at the rate these people are eating it. */
+  foodDaysRemaining(): number {
+    return this.settlement.foodDays;
+  }
+
+  /**
+   * How well someone would be looked after if they fell ill: a clinic, a well
+   * and a full belly between them account for most of surviving a sickness.
+   */
+  careQuality(npc: Npc): number {
+    const infra = this.settlement.infrastructure;
+    const clinic = clamp01(infra.health / 6);
+    const water = clamp01(infra.food / 8) * 0.3;
+    const fed = clamp01(npc.needs.hunger / 100) * 0.35;
+    const rested = clamp01(npc.needs.rest / 100) * 0.15;
+    return clamp01(clinic * 0.55 + water + fed * 0.5 + rested);
+  }
+
+  /** Clean water and somewhere to put waste, which is what slows a plague. */
+  sanitationQuality(): number {
+    const infra = this.settlement.infrastructure;
+    const perPerson = this.npcs.length > 0 ? infra.health / this.npcs.length : 0;
+    return clamp01(perPerson * 3);
+  }
+
+  /** The driest patch of burnable ground within reach, or null. */
+  driestFuelNear(x: number, z: number, radius: number): { x: number; z: number } | null {
+    const t = this.terrain;
+    let best: { x: number; z: number } | null = null;
+    let bestScore = -1;
+    for (let i = 0; i < 90; i++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = Math.sqrt(this.rng.next()) * radius;
+      const px = clamp(x + Math.cos(a) * r, 2, t.worldSize - 2);
+      const pz = clamp(z + Math.sin(a) * r, 2, t.worldSize - 2);
+      if (t.waterDepthAt(px, pz) > 0) continue;
+      let fuel = 0;
+      this.nodeGrid.forEachNear(px, pz, 10, (n) => {
+        fuel += RESOURCES[n.kind].category === 'tree' ? 1 : 0.3;
+      });
+      if (fuel <= 0) continue;
+      const score = fuel * (1 - t.moistureAt(px, pz));
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x: px, z: pz };
+      }
+    }
+    return best;
+  }
+
+  /** The lowest ground within reach: where water would actually collect. */
+  lowestGroundNear(x: number, z: number, radius: number): { x: number; z: number } | null {
+    const t = this.terrain;
+    let best: { x: number; z: number } | null = null;
+    let bestH = Infinity;
+    for (let i = 0; i < 90; i++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = Math.sqrt(this.rng.next()) * radius;
+      const px = clamp(x + Math.cos(a) * r, 2, t.worldSize - 2);
+      const pz = clamp(z + Math.sin(a) * r, 2, t.worldSize - 2);
+      const h = t.heightAt(px, pz);
+      if (h < 0.4) continue; // already sea
+      if (h < bestH) {
+        bestH = h;
+        best = { x: px, z: pz };
+      }
+    }
+    return best;
+  }
+
+  /** The steepest ground within reach: where a slope would give way. */
+  steepestGroundNear(x: number, z: number, radius: number): { x: number; z: number } | null {
+    const t = this.terrain;
+    let best: { x: number; z: number } | null = null;
+    let bestSlope = 0.45;
+    for (let i = 0; i < 90; i++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = Math.sqrt(this.rng.next()) * radius;
+      const px = clamp(x + Math.cos(a) * r, 2, t.worldSize - 2);
+      const pz = clamp(z + Math.sin(a) * r, 2, t.worldSize - 2);
+      const i2 = t.index(t.tileX(px), t.tileZ(pz));
+      if (t.waterHeight[i2] > t.data.height[i2]) continue;
+      if (t.data.slope[i2] > bestSlope) {
+        bestSlope = t.data.slope[i2];
+        best = { x: px, z: pz };
+      }
+    }
+    return best;
+  }
+
+  // =====================================================================
+  // Famine and sickness
+  // =====================================================================
+
+  /** Notes that the settlement has run out of food. */
+  beginFamine(severity: number): void {
+    if (this.famineSeverity > 0.05) return;
+    this.famineSeverity = clamp01(severity);
+    this.log.add(this.time, 'disaster', 'ev.famine', { name: this.config.name }, {
+      notable: true,
+      x: this.settlement.centre.x,
+      z: this.settlement.centre.z,
+    });
+  }
+
+  /**
+   * A famine lasts exactly as long as the stores are empty. It is not a timer,
+   * and it cannot be waited out: it ends when there is food again.
+   */
+  private updateFamine(hours: number): void {
+    if (this.famineSeverity <= 0) return;
+    const days = this.settlement.foodDays;
+    if (days > 3) {
+      this.famineSeverity = 0;
+      this.log.add(this.time, 'settlement', 'ev.famineEnds', { name: this.config.name }, {
+        notable: true,
+      });
+      return;
+    }
+    // While it lasts, going without wears people down faster than hunger alone.
+    const bite = this.famineSeverity * hours * 0.5;
+    for (const npc of this.npcs) {
+      if (npc.needs.hunger > 45) continue;
+      npc.needs.health = clamp(npc.needs.health - bite, 0, 100);
+      if (npc.needs.health <= 0) {
+        this.killNpc(npc, 'ev.diedOfHunger', { name: npc.name });
+      }
+    }
+  }
+
+  /** Starts an outbreak, if there is anybody to catch it. */
+  beginOutbreak(x: number, z: number, severity: number): void {
+    this.disease.begin(this, x, z, severity);
+  }
+
+  /** Someone has died. Their things stay where they were. */
+  killNpc(npc: Npc, reasonKey: string, params: Record<string, string | number>): void {
+    // Whatever they were carrying falls where they fell.
+    for (const entry of npc.inventory.summary()) {
+      this.dropPile(entry.item, entry.count, npc.x, npc.z);
+    }
+    npc.inventory.clear();
+    this.log.add(this.time, 'settlement', reasonKey, params, {
+      notable: true,
+      x: npc.x,
+      z: npc.z,
+    });
+    // The people who knew them feel it.
+    for (const other of this.npcs) {
+      if (other.id === npc.id) continue;
+      const bond = other.relationships.get(npc.id) ?? 0;
+      if (bond > 20) other.needs.mood = clamp(other.needs.mood - bond * 0.25, 0, 100);
+    }
+    this.removeNpc(npc);
+  }
+
   /** Someone is under a roof, so the weather cannot reach them. */
   isSheltered(npc: Npc): boolean {
     // Standing inside the footprint of a finished, roofed building.
@@ -1752,6 +1962,7 @@ export class World {
   /** Collapses a steep slope downhill. */
   landslide(x: number, z: number, radius: number): void {
     this.editor.sculpt(x, z, radius, -this.rng.range(1.5, 4), 'dome', 'landslide');
+    this.markTerrainChanged();
     // Anything growing on the slope goes with it.
     const doomed: ResourceNode[] = [];
     this.nodeGrid.forEachNear(x, z, radius, (n) => doomed.push(n));
@@ -1840,6 +2051,7 @@ export class World {
 
   /** Raises a cone of rock and marks it as a volcano. */
   raiseVolcano(x: number, z: number, radius: number, strength: number): void {
+    this.markTerrainChanged();
     const height = 25 + strength * 90;
     this.editor.sculpt(x, z, radius, height, 'cone', 'volcano');
     // A crater at the summit.
@@ -1997,6 +2209,10 @@ export class World {
       activeRecipe: b.activeRecipe,
       paused: b.paused,
       priority: b.priority,
+      repairNeeded: b.repairNeeded,
+      repairWork: b.repairWork,
+      repairBill: b.repairBill as Record<string, number>,
+      repairMaterialsConsumed: b.repairMaterialsConsumed,
       fields: b.fields.map((f) => ({
         tx: f.tx,
         tz: f.tz,
@@ -2028,6 +2244,24 @@ export class World {
       b.activeRecipe = (r.activeRecipe as RecipeId) ?? null;
       b.paused = r.paused ?? false;
       b.priority = r.priority ?? 1;
+
+      // A repair in progress picks up where it left off, bill and all. The
+      // bill is filtered against the real item table, because a save file is
+      // data from outside the program.
+      b.repairNeeded = r.repairNeeded === true;
+      b.repairWork = typeof r.repairWork === 'number' && r.repairWork >= 0 ? r.repairWork : 0;
+      b.repairMaterialsConsumed = r.repairMaterialsConsumed === true;
+      b.repairBill = {};
+      for (const [item, amount] of Object.entries(r.repairBill ?? {})) {
+        if (!ITEMS[item as ItemId]) continue;
+        if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) continue;
+        b.repairBill[item as ItemId] = Math.min(9999, Math.round(amount));
+      }
+      if (b.repairNeeded && Object.keys(b.repairBill).length === 0 && !b.repairMaterialsConsumed) {
+        // An old save knew the building was damaged but not what it would
+        // cost; work that out now rather than repairing it for free.
+        b.computeRepairBill();
+      }
 
       const inv = Inventory.deserialize(r.inventory);
       for (let i = 0; i < b.inventory.slots.length && i < inv.slots.length; i++) {

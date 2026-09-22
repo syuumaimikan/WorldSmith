@@ -15,7 +15,7 @@ import { ItemId } from '../data/items';
 import { Building } from './Building';
 import { ItemPile } from './ItemPile';
 
-export type JobKind = 'haul' | 'build' | 'demolish';
+export type JobKind = 'haul' | 'build' | 'repair' | 'demolish';
 
 export const PRIORITY_LABELS = ['Low', 'Normal', 'High', 'Critical'];
 
@@ -54,12 +54,17 @@ export interface BuildJob extends BaseJob {
   buildingId: number;
 }
 
+export interface RepairJob extends BaseJob {
+  kind: 'repair';
+  buildingId: number;
+}
+
 export interface DemolishJob extends BaseJob {
   kind: 'demolish';
   buildingId: number;
 }
 
-export type Job = HaulJob | BuildJob | DemolishJob;
+export type Job = HaulJob | BuildJob | RepairJob | DemolishJob;
 
 export interface JobContext {
   buildings: Building[];
@@ -191,7 +196,26 @@ export class JobBoard {
       }
     }
 
-    // 3. Demolition.
+    // 3. Repairs. A damaged building is worth more attention than a new one,
+    //    because the settlement is already relying on it.
+    for (const b of ctx.buildings) {
+      if (!b.repairNeeded || b.demolishing || b.paused) continue;
+      if (!b.readyToRepair()) continue;
+      if (this.jobs.some((j) => j.kind === 'repair' && j.buildingId === b.id)) continue;
+      const p = b.accessPoint(ctx.tileSize);
+      this.jobs.push({
+        id: this.nextId++,
+        kind: 'repair',
+        priority: Math.max(b.priority, 2),
+        assignedTo: 0,
+        buildingId: b.id,
+        x: p.x,
+        z: p.z,
+        age: 0,
+      });
+    }
+
+    // 4. Demolition.
     for (const b of ctx.buildings) {
       if (!b.demolishing) continue;
       const existing = this.jobs.some((j) => j.kind === 'demolish' && j.buildingId === b.id);
@@ -211,11 +235,11 @@ export class JobBoard {
 
     if (this.jobs.length >= MAX_HAUL_JOBS) return;
 
-    // 4. Supply construction sites. This is the highest-value hauling in the
-    //    game: a site without materials is a site standing idle.
+    // 5. Supply construction sites and repairs. This is the highest-value
+    //    hauling in the game: a site without materials is a site standing idle.
     for (const b of ctx.buildings) {
-      if (b.complete || b.demolishing || b.paused) continue;
-      const missing = b.missingMaterials();
+      if (b.demolishing || b.paused) continue;
+      const missing = b.complete ? b.missingRepairMaterials() : b.missingMaterials();
       if (missing.length === 0) continue;
       const dest = b.accessPoint(ctx.tileSize);
       for (const m of missing) {
@@ -249,7 +273,7 @@ export class JobBoard {
       }
     }
 
-    // 5. Collect loose piles from the ground.
+    // 6. Collect loose piles from the ground.
     for (const pile of ctx.piles) {
       if (pile.reservedBy !== 0) continue;
       if (this.jobs.some((j) => j.kind === 'haul' && j.sourceType === 'pile' && j.sourceId === pile.id)) {
@@ -278,7 +302,7 @@ export class JobBoard {
       if (this.jobs.length >= MAX_HAUL_JOBS) return;
     }
 
-    // 6. Feed workshops their recipe inputs.
+    // 7. Feed workshops their recipe inputs.
     for (const b of ctx.buildings) {
       if (!b.complete || b.paused) continue;
       const needs = workshopNeeds(b);
@@ -357,13 +381,19 @@ export class JobBoard {
       const b = ctx.buildingById.get(job.buildingId);
       return !!b && !b.complete && !b.demolishing && !b.paused && b.readyForWork();
     }
+    if (job.kind === 'repair') {
+      const b = ctx.buildingById.get(job.buildingId);
+      return !!b && b.repairNeeded && !b.demolishing && !b.paused && b.readyToRepair();
+    }
     if (job.kind === 'demolish') {
       const b = ctx.buildingById.get(job.buildingId);
       return !!b && b.demolishing;
     }
     const dest = ctx.buildingById.get(job.destId);
     if (!dest) return false;
-    if (job.toSite && dest.complete) return false;
+    // Site deliveries are for construction or for a repair; either way they
+    // stop mattering once there is nothing left to deliver them for.
+    if (job.toSite && dest.complete && !dest.repairNeeded) return false;
     if (job.sourceType === 'pile') {
       const p = ctx.pileById.get(job.sourceId);
       return !!p && (p.reservedBy === 0 || p.reservedBy === job.assignedTo);

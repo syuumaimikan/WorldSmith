@@ -58,6 +58,15 @@ export class Building {
   repairNeeded = false;
   /** Work put into the current repair. */
   repairWork = 0;
+  /**
+   * What the repair will cost in materials, fixed when the damage was taken.
+   * Left as a snapshot rather than recomputed from condition, so a building
+   * damaged again mid-repair does not quietly rewrite the bill already being
+   * hauled against.
+   */
+  repairBill: Partial<Record<ItemId, number>> = {};
+  /** Set once the bill has been taken out of the site store. */
+  repairMaterialsConsumed = false;
 
   /** Finished-building store (workshop inputs/outputs, warehouse contents). */
   readonly inventory: Inventory;
@@ -294,12 +303,65 @@ export class Building {
 
   /** Total labour to bring a damaged building back to full condition. */
   get repairWorkRequired(): number {
-    return this.def.totalWork * 0.35 * (1 - this.condition);
+    return Math.max(4, this.def.totalWork * 0.35 * (1 - this.condition));
+  }
+
+  /**
+   * Works out what putting this building right will take.
+   *
+   * Repair costs a share of the original recipe in proportion to the damage,
+   * with a floor of one unit of anything that is needed at all: you cannot
+   * patch a wall with three-tenths of a stone block.
+   */
+  computeRepairBill(): void {
+    const share = clamp01(1 - this.condition) * 0.6;
+    const bill: Partial<Record<ItemId, number>> = {};
+    for (const [item, total] of Object.entries(this.def.totalMaterials) as [ItemId, number][]) {
+      const amount = Math.round(total * share);
+      if (amount > 0) bill[item] = amount;
+    }
+    this.repairBill = bill;
+    this.repairMaterialsConsumed = false;
+    this.repairWork = 0;
+  }
+
+  /** Repair materials still to be delivered, net of what is already coming. */
+  missingRepairMaterials(): { item: ItemId; amount: number }[] {
+    if (!this.repairNeeded || this.repairMaterialsConsumed) return [];
+    const out: { item: ItemId; amount: number }[] = [];
+    for (const [item, need] of Object.entries(this.repairBill) as [ItemId, number][]) {
+      const have = this.siteStore.count(item) + (this.incoming.get(item) ?? 0);
+      if (have < need) out.push({ item, amount: need - have });
+    }
+    return out;
+  }
+
+  /** True when everything the repair needs is on site. */
+  readyToRepair(): boolean {
+    if (!this.repairNeeded || this.demolishing) return false;
+    if (this.repairMaterialsConsumed) return true;
+    for (const [item, need] of Object.entries(this.repairBill) as [ItemId, number][]) {
+      if (this.siteStore.count(item) < need) return false;
+    }
+    return true;
+  }
+
+  /** Takes the repair materials out of the site store. Call once work begins. */
+  consumeRepairMaterials(): boolean {
+    if (this.repairMaterialsConsumed) return true;
+    for (const [item, need] of Object.entries(this.repairBill) as [ItemId, number][]) {
+      if (this.siteStore.count(item) < need) return false;
+    }
+    for (const [item, need] of Object.entries(this.repairBill) as [ItemId, number][]) {
+      this.siteStore.remove(item, need);
+    }
+    this.repairMaterialsConsumed = true;
+    return true;
   }
 
   statusText(): string {
     if (this.demolishing) return 'Being demolished';
-    if (this.repairNeeded) return 'Awaiting repair';
+    if (this.repairNeeded) return this.readyToRepair() ? 'Under repair' : 'Awaiting repair materials';
     if (this.complete) {
       if (this.paused) return 'Paused';
       if (this.def.workSlots > 0 && this.workerIds.length === 0) return 'No workers';
