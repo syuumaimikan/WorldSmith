@@ -24,6 +24,7 @@ import { WildlifeRenderer } from '../render/WildlifeRenderer';
 import { ParticleSystem } from '../render/Particles';
 import { SkyfallRenderer } from '../render/SkyfallRenderer';
 import { LandmarkRenderer } from '../render/LandmarkRenderer';
+import { TownRenderer } from '../render/TownRenderer';
 import { CharacterRig } from '../render/CharacterRig';
 import { characterMaterial, lookFor } from '../render/geometry/character';
 import { PALETTE } from '../render/Palette';
@@ -107,6 +108,8 @@ export class Game {
   readonly wildlifeRenderer: WildlifeRenderer;
   readonly particles: ParticleSystem;
   readonly landmarks: LandmarkRenderer;
+  readonly towns: TownRenderer;
+  private townCount = 0;
   readonly skyfall: SkyfallRenderer;
   readonly overlays: OverlayRenderer;
   readonly build: BuildController;
@@ -177,6 +180,9 @@ export class Game {
     this.vegetation = new VegetationRenderer(this.scene, world.terrain, season, cold);
     this.landmarks = new LandmarkRenderer(this.scene);
     this.landmarks.build(world.pois, world.terrain);
+    this.towns = new TownRenderer(this.scene);
+    this.towns.build(world.nations.allTowns, world.terrain);
+    this.townCount = world.nations.allTowns.length;
     // A sinkhole can open a cave that was not there when the world loaded.
     world.onLandmarksChanged = () => this.landmarks.build(world.pois, world.terrain);
     this.buildingRenderer = new BuildingRenderer(this.scene, season);
@@ -945,6 +951,15 @@ export class Game {
   }
 
   private publishHud(): void {
+    // Towns are founded and emptied over years, so this is checked at the
+    // rate the HUD updates rather than every frame, and rebuilt only when the
+    // map of them has actually changed.
+    const towns = this.world.nations.allTowns;
+    if (towns.length !== this.townCount) {
+      this.townCount = towns.length;
+      this.towns.build(towns, this.world.terrain);
+    }
+
     const snap = this.world.time.snapshot();
     const h = this.hud;
     h.version = ++this.hudVersion;

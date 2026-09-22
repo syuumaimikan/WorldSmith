@@ -106,6 +106,44 @@ export interface Leader {
   cameBy: 'inheritance' | 'election' | 'ordination' | 'council' | 'founding' | 'force';
 }
 
+/**
+ * A place people actually live.
+ *
+ * A nation was a capital point and a set of claimed cells, which is a border
+ * with nothing inside it. Real countries are a handful of towns with roads
+ * between them and a great deal of empty ground, and which of those towns is
+ * a city is not a label somebody chose -- it is how many people are in it.
+ */
+export interface Town {
+  id: number;
+  name: string;
+  nationId: number;
+  x: number;
+  z: number;
+  population: number;
+  /** The day it was founded, so the chronicle can say how old it is. */
+  foundedDay: number;
+  /** True for the one the government sits in. */
+  isCapital: boolean;
+  /** Set when it has been sacked or abandoned, so ruins can be left behind. */
+  ruined: boolean;
+}
+
+export type TownTier = 'village' | 'town' | 'city';
+
+/**
+ * What to call a place of that size.
+ *
+ * The thresholds are deliberately low by modern standards, because they are
+ * ancient ones: a settlement of two thousand people was a considerable city
+ * for most of history.
+ */
+export function tierOf(town: Town): TownTier {
+  if (town.population >= 900) return 'city';
+  if (town.population >= 220) return 'town';
+  return 'village';
+}
+
 export interface Nation {
   id: number;
   name: string;
@@ -133,6 +171,9 @@ export interface Nation {
   treasury: number;
   /** Fighting strength currently under arms. */
   army: number;
+
+  /** Where its people actually live. The first one is the capital. */
+  towns: Town[];
 
   laws: Set<LawId>;
   /**
@@ -329,6 +370,9 @@ export class NationSystem {
       nation.treasury = nation.population * this.rng.range(0.4, 2.2);
       this.nations.push(nation);
       this.claimAround(nation, 2 + Math.floor(nation.population / 120));
+      // They are already living somewhere when the player arrives, rather
+      // than founding their capital some weeks later.
+      this.foundTown(world, nation, true);
       taken.push({ x, z });
     }
   }
@@ -369,6 +413,7 @@ export class NationSystem {
       taxRate: isPlayer ? 0.05 : this.rng.range(0.08, 0.3),
       treasury: 0,
       army: 0,
+      towns: [],
       laws: new Set<LawId>(),
       rebelAgainst: 0,
       regimeChanges: 0,
@@ -563,6 +608,148 @@ export class NationSystem {
     this.considerNewPeoples(world, days);
   }
 
+  /** Every settlement in the world that belongs to somebody. */
+  get allTowns(): Town[] {
+    const out: Town[] = [];
+    for (const n of this.nations) out.push(...n.towns);
+    return out;
+  }
+
+  /** The town nearest a point, for naming a battle or a border incident. */
+  townNear(x: number, z: number, maxDistance = Infinity): Town | null {
+    let best: Town | null = null;
+    let bestD = maxDistance;
+    for (const n of this.nations) {
+      for (const town of n.towns) {
+        const d = Math.hypot(town.x - x, town.z - z);
+        if (d >= bestD) continue;
+        bestD = d;
+        best = town;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Puts a new settlement somewhere inside a nation's own ground.
+   *
+   * It has to be habitable, it has to be theirs, and it has to be far enough
+   * from the places that already exist that it is a separate place rather
+   * than a suburb.
+   */
+  private foundTown(world: World, nation: Nation, isCapital: boolean): Town | null {
+    const t = this.terrain;
+    const spacing = isCapital ? 0 : this.cellSize * 2.2;
+    let best: { x: number; z: number; score: number } | null = null;
+
+    for (let attempt = 0; attempt < 160; attempt++) {
+      // Somewhere in their own territory, biased towards the capital, which
+      // is how a country actually fills in.
+      const a = this.rng.range(0, Math.PI * 2);
+      // A capital settles within sight of where the people were put; only
+      // later towns range out across the territory. Letting a capital wander
+      // was enough to put two of them inside each other's borders.
+      const reach = isCapital ? 0.8 : 2 + nation.territory * 0.22;
+      const r = this.rng.range(0, this.cellSize * reach);
+      const x = nation.x + Math.cos(a) * r;
+      const z = nation.z + Math.sin(a) * r;
+      if (x < 8 || z < 8 || x > t.worldSize - 8 || z > t.worldSize - 8) continue;
+      if (!this.habitable(x, z)) continue;
+      if (!isCapital && this.claims[this.cellIndexAt(x, z)] !== nation.id) continue;
+
+      let clear = true;
+      for (const n2 of this.nations) {
+        for (const other of n2.towns) {
+          if (Math.hypot(other.x - x, other.z - z) < spacing) clear = false;
+        }
+      }
+      if (!clear) continue;
+      // The player's own settlement is a place too, and nobody builds a
+      // village on top of it.
+      if (Math.hypot(world.settlement.centre.x - x, world.settlement.centre.z - z) < spacing) {
+        continue;
+      }
+
+      const i = t.index(t.tileX(x), t.tileZ(z));
+      const score = t.data.fertility[i] * 2 + (1 - t.data.slope[i]) + this.rng.next() * 0.3;
+      if (!best || score > best.score) best = { x, z, score };
+    }
+    if (!best) return null;
+
+    const town: Town = {
+      id: this.nextId++,
+      name: this.namer.settlementName(`town:${nation.id}:${this.nextId}`),
+      nationId: nation.id,
+      x: best.x,
+      z: best.z,
+      population: isCapital ? Math.max(40, nation.population) : 30,
+      foundedDay: world.time.totalDays,
+      isCapital,
+      ruined: false,
+    };
+    nation.towns.push(town);
+    if (isCapital) {
+      nation.x = town.x;
+      nation.z = town.z;
+    }
+    return town;
+  }
+
+  /**
+   * Where a nation's people are, distributed over the places it has.
+   *
+   * New towns are founded when the existing ones are full rather than on a
+   * timer, which is why a nation that cannot grow stays one village and one
+   * that can ends up with a capital, two towns and a scatter of hamlets.
+   */
+  private updateTowns(world: World, nation: Nation, days: number): void {
+    // The player's people have a settlement, which is a place with buildings
+    // in it that they put there. Founding a second one on top of it would be
+    // the simulation telling them where they live.
+    if (nation.isPlayer) return;
+    if (nation.towns.length === 0) {
+      this.foundTown(world, nation, true);
+      if (nation.towns.length === 0) return;
+    }
+
+    // Everybody lives somewhere. Share the population out by how big each
+    // place already is, which is how populations actually concentrate.
+    const total = nation.towns.reduce((sum, tn) => sum + tn.population, 0) || 1;
+    for (const town of nation.towns) {
+      town.population = Math.max(1, Math.round((town.population / total) * nation.population));
+    }
+
+    // A town that has outgrown what one place can hold sends people out to
+    // start another. Ancient cities were limited by what could be carted in.
+    const biggest = nation.towns.reduce((a, b) => (a.population > b.population ? a : b));
+    const roomPerTown = 1400;
+    if (biggest.population > roomPerTown && this.rng.chance(clamp01(days * 0.02))) {
+      const fresh = this.foundTown(world, nation, false);
+      if (fresh) {
+        const moved = Math.round(biggest.population * 0.25);
+        biggest.population -= moved;
+        fresh.population = moved;
+        world.log.add(world.time, 'settlement', 'ev.townFounded', {
+          name: fresh.name,
+          nation: nation.name,
+        }, { notable: true, x: fresh.x, z: fresh.z });
+      }
+    }
+
+    // And a place nobody is left in stops being a place.
+    for (let i = nation.towns.length - 1; i >= 0; i--) {
+      const town = nation.towns[i];
+      if (town.population > 4 || town.isCapital) continue;
+      town.ruined = true;
+      nation.towns.splice(i, 1);
+      world.log.add(world.time, 'settlement', 'ev.townAbandoned', { name: town.name }, {
+        notable: true,
+        x: town.x,
+        z: town.z,
+      });
+    }
+  }
+
   private updateNation(world: World, nation: Nation, days: number): void {
     const traits = GOVERNMENTS[nation.government];
 
@@ -571,6 +758,9 @@ export class NationSystem {
     if (nation.leader.age > 62 && this.rng.chance(clamp01((nation.leader.age - 62) * 0.004 * days))) {
       this.succeed(world, nation, 'death');
     }
+
+    // --- where they live --------------------------------------------------
+    this.updateTowns(world, nation, days);
 
     // --- people -----------------------------------------------------------
     const lawGrowth = this.lawProduct(nation, 'growth');
@@ -1111,6 +1301,7 @@ export class NationSystem {
       nations: this.nations.map((n) => ({
         ...n,
         laws: [...n.laws],
+        towns: n.towns.map((tn) => ({ ...tn })),
         leader: { ...n.leader },
       })),
     };
@@ -1154,6 +1345,20 @@ export class NationSystem {
               lawIds.includes(l as LawId),
             ),
           ),
+          towns: (Array.isArray(raw.towns) ? raw.towns : [])
+            .filter((tn: unknown): tn is Record<string, unknown> => !!tn && typeof tn === 'object')
+            .slice(0, 64)
+            .map((tn: Record<string, unknown>) => ({
+              id: Math.max(1, Math.round(num(tn.id, this.nextId++))),
+              name: typeof tn.name === 'string' ? tn.name.slice(0, 64) : 'Unnamed',
+              nationId: Math.max(0, Math.round(num(tn.nationId, 0))),
+              x: clamp(num(tn.x, 0), 0, this.terrain.worldSize),
+              z: clamp(num(tn.z, 0), 0, this.terrain.worldSize),
+              population: clamp(num(tn.population, 1), 0, 1e6),
+              foundedDay: Math.max(0, num(tn.foundedDay, 0)),
+              isCapital: tn.isCapital === true,
+              ruined: tn.ruined === true,
+            })),
           regimeChanges: Math.max(0, Math.round(num(raw.regimeChanges, 0))),
           lastRegimeChangeDay: Math.max(0, num(raw.lastRegimeChangeDay, 0)),
           inCivilWar: raw.inCivilWar === true,

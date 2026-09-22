@@ -1110,6 +1110,37 @@ function carveRiversAndLakes(
     }
   }
 
+  // A river surface should fall smoothly, and this one did not.
+  //
+  // The level was taken from the bank height at each tile, and the banks
+  // carry every ledge that erosion left in them, so the water inherited them:
+  // a channel came out as a flight of stairs with a vertical riser every few
+  // metres. Averaging along the channel takes the steps out and leaves the
+  // fall, which is what a river actually looks like. Lakes are left alone --
+  // their surface is level by definition and averaging would tilt it.
+  const smoothed = new Float32Array(total);
+  for (let pass = 0; pass < 4; pass++) {
+    smoothed.set(waterHeight);
+    for (let z = 1; z < N - 1; z++) {
+      for (let x = 1; x < N - 1; x++) {
+        const i = z * N + x;
+        if (isLake[i] || waterHeight[i] === NO_WATER) continue;
+        if (h[i] < 0.2) continue;
+        let sum = waterHeight[i];
+        let n = 1;
+        for (const j of [i - 1, i + 1, i - N, i + N]) {
+          if (waterHeight[j] === NO_WATER || isLake[j]) continue;
+          sum += waterHeight[j];
+          n++;
+        }
+        if (n < 2) continue;
+        // Never below the bed: a surface under its own channel is not water.
+        smoothed[i] = Math.max(h[i] + 0.05, sum / n);
+      }
+    }
+    waterHeight.set(smoothed);
+  }
+
   return { lakes, isLake };
 }
 
