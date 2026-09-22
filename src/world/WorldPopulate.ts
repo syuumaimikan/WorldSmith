@@ -191,7 +191,7 @@ export function populateWorld(
 
   // ------------------------------------------------------------- landmarks
   progress('Remembering the past', 0);
-  const { pois, historyLines } = placePois(config, terrain, waterHeight, rng, occupied);
+  const { pois, historyLines } = placePois(config, terrain, waterHeight, rng, occupied, geology);
 
   // -------------------------------------------------------- starting site
   const start = chooseStartSite(terrain, waterHeight, rng);
@@ -408,6 +408,7 @@ function placePois(
   waterHeight: Float32Array,
   rng: Rng,
   occupied: Uint8Array,
+  geology: GeologyField,
 ): { pois: PointOfInterest[]; historyLines: string[] } {
   const N = terrain.gridSize;
   const ts = terrain.tileSize;
@@ -428,8 +429,17 @@ function placePois(
     const biome = terrain.biome[i] as Biome;
 
     let kind: PointOfInterest['kind'] | null = null;
-    if (biome === Biome.Mountain || biome === Biome.Alpine) {
-      kind = slope > 0.5 ? 'cave' : rng.chance(0.5) ? 'tower' : 'monolith';
+    // Caves are not a mountain feature, they are a limestone feature. Water
+    // dissolves carbonate and does not dissolve granite, so a cave goes where
+    // the rock will let there be one -- which may be a low hillside in gentle
+    // country, and may not be the crag it looks like it ought to be. A lava
+    // tube is the other way in: a cave that cooled around its own emptiness.
+    if (geology.karst[i] > 0.45 && rng.chance(0.55)) {
+      kind = 'cave';
+    } else if (geology.volcanism[i] > 0.5 && rng.chance(0.3)) {
+      kind = 'cave';
+    } else if (biome === Biome.Mountain || biome === Biome.Alpine) {
+      kind = rng.chance(0.5) ? 'tower' : 'monolith';
     } else if (biome === Biome.Beach) {
       kind = rng.chance(0.55) ? 'shipwreck' : 'camp';
     } else if (biome === Biome.DenseForest || biome === Biome.TemperateForest) {

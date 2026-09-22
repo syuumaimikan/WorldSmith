@@ -737,6 +737,7 @@ export const en: Record<string, string> = {
   'event.earthquake': 'The ground shakes. {damaged} buildings are damaged.',
   'ev.skyfallSeen': 'A light crosses the sky, and it is getting brighter.',
   'ev.seaDrawsBack': 'The sea is going out. It is going out much too far.',
+  'event.sinkhole': 'The ground opens. A hole {span} metres across swallows {swallowed} things and {destroyed} buildings.',
   'event.tsunami': 'The sea comes in over the land. {flooded} tiles are drowned and {destroyed} buildings are swept away.',
   'event.eruption': '{name} erupts.',
   'event.volcanoUnrest': '{name} is stirring — tremors and steam.',

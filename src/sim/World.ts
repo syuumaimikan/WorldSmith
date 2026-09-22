@@ -61,6 +61,7 @@ import { TechnologySystem } from './Technology';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
 import { makeHotspots } from '../world/Plates';
+import { KarstSystem } from './Sinkholes';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
 import { Inventory } from './Inventory';
 
@@ -161,6 +162,8 @@ export class World {
   private regrowing: ResourceNode[] = [];
   /** Days of growing not yet applied to the woodland. */
   private woodlandDebt = 0;
+  /** Limestone country, and what the rain is doing to it. */
+  readonly karst: KarstSystem;
   private jobTimer = 0;
   private settlementTimer = 0;
   private assignmentTimer = 0;
@@ -215,6 +218,7 @@ export class World {
     this.culture = new CultureSystem(config.seed, this.namer);
     this.generations = new Generations(config.seed);
     this.development = new Development(config.seed);
+    this.karst = new KarstSystem(config.seed);
     this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
@@ -1861,6 +1865,7 @@ export class World {
     this.disasters.updateFloods(this, dt);
     this.disasters.updateSkyfall(this, dt);
     this.disasters.updateWaves(this, dt);
+    this.karst.update(this, hours / 24);
     updateVolcanoes(this, dt);
 
     // Crops.
@@ -2353,6 +2358,30 @@ export class World {
   // =====================================================================
 
   /** The ground has been reshaped, so anything measured off it is stale. */
+  /**
+   * Opens a way underground where the roof has just come off one.
+   *
+   * A sinkhole that goes deep enough is not a hole, it is a door: the chamber
+   * the water dissolved is still down there, and now it can be walked into.
+   */
+  openCave(x: number, z: number): PointOfInterest {
+    const poi: PointOfInterest = {
+      id: this.nextId(),
+      kind: 'cave',
+      x,
+      z,
+      name: this.namer.featureName('cave', `${Math.round(x)},${Math.round(z)}`),
+      lore: 'poi.lore.cave.0',
+      discovered: false,
+    };
+    this.pois.push(poi);
+    this.onLandmarksChanged?.();
+    return poi;
+  }
+
+  /** Set by the renderer, so a new landmark actually appears. */
+  onLandmarksChanged: (() => void) | null = null;
+
   markTerrainChanged(): void {
     this.steepFractionDirty = true;
   }

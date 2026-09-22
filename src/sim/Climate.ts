@@ -312,6 +312,16 @@ export class ClimateSystem {
     return this.smooth(this.precipitation, worldX, worldZ);
   }
 
+  /**
+   * How wet this place has been over the long run rather than today.
+   *
+   * A slow average, which is what processes measured in centuries -- soil,
+   * vegetation, dissolving limestone -- actually respond to.
+   */
+  rainfallMeanAt(worldX: number, worldZ: number): number {
+    return this.smooth(this.rainfallMean, worldX, worldZ);
+  }
+
   snowDepthAt(worldX: number, worldZ: number): number {
     return this.smooth(this.snowpack, worldX, worldZ);
   }

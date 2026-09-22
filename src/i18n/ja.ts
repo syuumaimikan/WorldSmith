@@ -731,6 +731,7 @@ export const ja: Record<string, string> = {
   'event.earthquake': '大地が揺れた。建物{damaged}棟が損傷。',
   'ev.skyfallSeen': '空を光が横切っていく。次第に明るくなっていく。',
   'ev.seaDrawsBack': '海が引いていく。あまりにも遠くまで引いていく。',
+  'event.sinkhole': '地面が陥没した。差し渡し{span}メートルの穴が、{swallowed}の物と建物{destroyed}棟を呑み込んだ。',
   'event.tsunami': '津波が陸地を襲った。{flooded}区画が水没し、建物{destroyed}棟が流された。',
   'event.eruption': '{name}が噴火した。',
   'event.volcanoUnrest': '{name}が騒がしい — 微震と噴気。',

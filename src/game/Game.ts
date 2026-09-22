@@ -177,6 +177,8 @@ export class Game {
     this.vegetation = new VegetationRenderer(this.scene, world.terrain, season, cold);
     this.landmarks = new LandmarkRenderer(this.scene);
     this.landmarks.build(world.pois, world.terrain);
+    // A sinkhole can open a cave that was not there when the world loaded.
+    world.onLandmarksChanged = () => this.landmarks.build(world.pois, world.terrain);
     this.buildingRenderer = new BuildingRenderer(this.scene, season);
     this.pileRenderer = new PileRenderer(this.scene);
     this.npcRenderer = new NpcRenderer(this.scene);

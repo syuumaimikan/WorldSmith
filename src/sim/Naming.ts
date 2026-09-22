@@ -50,6 +50,7 @@ export type FeatureKind =
   | 'forest'
   | 'sea'
   | 'plain'
+  | 'cave'
   | 'region';
 
 /** Words for landscape, used when naming a feature after what it is. */
@@ -61,6 +62,7 @@ const FEATURE_WORDS: Record<FeatureKind, string[]> = {
   forest: ['Wood', 'Weald', 'Thicket', 'Grove', 'Shaw'],
   sea: ['Deep', 'Reach', 'Sound', 'Strait', 'Gulf'],
   plain: ['Flats', 'Downs', 'Meadows', 'Sweep', 'Verge'],
+  cave: ['Hollow', 'Delve', 'Maw', 'Swallet', 'Undercroft'],
   region: ['March', 'Marches', 'Reach', 'Vale', 'Expanse'],
 };
 
