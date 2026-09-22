@@ -1,11 +1,25 @@
 import { useMemo, useState } from 'react';
 import { Game } from '../../game/Game';
 import { Bar, EmptyNote, ItemIcon, Pill, Tabs, Window } from '../components/common';
-import { TIER_LABELS } from '../../sim/Settlement';
-import { ALL_PROFESSIONS, PROFESSIONS, ProfessionId, SKILL_LABELS, ALL_SKILLS } from '../../data/professions';
-import { ACTIVITY_LABELS } from '../../sim/Npc';
+import {
+  ALL_PROFESSIONS,
+  ALL_SKILLS,
+  ProfessionId,
+  SKILL_LABELS,
+  professionColour,
+} from '../../data/professions';
 import { ITEMS, ItemId } from '../../data/items';
 import { hexToCss, PALETTE } from '../../render/Palette';
+import { useT } from '../../i18n';
+import {
+  activityName,
+  buildingName,
+  itemName,
+  moodName,
+  professionName,
+  tierName,
+} from '../../i18n/names';
+import { buildingStatus } from '../../i18n/status';
 
 interface Props {
   game: Game;
@@ -15,6 +29,7 @@ interface Props {
 type Tab = 'overview' | 'people' | 'stores' | 'buildings';
 
 export function SettlementPanel({ game, onClose }: Props): JSX.Element {
+  const t = useT();
   const world = game.world;
   const [tab, setTab] = useState<Tab>('overview');
   const [, refresh] = useState(0);
@@ -32,13 +47,13 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
   }, [world.buildings, tab]);
 
   return (
-    <Window title={`${world.config.name} — ${TIER_LABELS[s.tier]}`} onClose={onClose} width="wide">
+    <Window title={`${world.config.name} \u2014 ${tierName(s.tier)}`} onClose={onClose} width="wide">
       <Tabs<Tab>
         tabs={[
-          { id: 'overview', label: 'Overview' },
-          { id: 'people', label: `People (${world.npcs.length})` },
-          { id: 'stores', label: 'Stores' },
-          { id: 'buildings', label: `Buildings (${world.buildings.length})` },
+          { id: 'overview', label: t('set.overview') },
+          { id: 'people', label: t('set.people', { count: world.npcs.length }) },
+          { id: 'stores', label: t('set.stores') },
+          { id: 'buildings', label: t('set.buildings', { count: world.buildings.length }) },
         ]}
         active={tab}
         onChange={setTab}
@@ -49,35 +64,35 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
           <div className="two-col" style={{ gap: 24 }}>
             <div>
               <div className="section-label" style={{ marginTop: 0 }}>
-                State of the settlement
+                {t('set.state')}
               </div>
-              <Row label="Population" value={String(s.population)} />
-              <Row label="Housing capacity" value={String(s.housingCapacity)} />
+              <Row label={t('set.population')} value={String(s.population)} />
+              <Row label={t('set.housingCapacity')} value={String(s.housingCapacity)} />
               <Row
-                label="Without a home"
+                label={t('set.homeless')}
                 value={String(s.homeless)}
                 tone={s.homeless > 0 ? 'warn' : undefined}
               />
-              <Row label="Unassigned" value={String(s.unemployed)} />
-              <Row label="Average mood" value={`${Math.round(s.averageMood)}%`} />
+              <Row label={t('set.unassigned')} value={String(s.unemployed)} />
+              <Row label={t('set.averageMood')} value={`${Math.round(s.averageMood)}%`} />
               <Row
-                label="Food in store"
+                label={t('set.foodInStore')}
                 value={`${Math.round(s.foodStores)} (${s.foodDays > 90 ? '∞' : s.foodDays.toFixed(1)} days)`}
                 tone={s.foodDays < 3 ? 'bad' : s.foodDays < 6 ? 'warn' : 'good'}
               />
-              <Row label="Founded" value={`Day ${s.foundedDay}`} />
+              <Row label={t('set.founded')} value={t('set.day', { day: s.foundedDay })} />
 
-              <div className="section-label">Infrastructure</div>
+              <div className="section-label">{t('set.infrastructure')}</div>
               {(
                 [
-                  ['Roads', s.infrastructure.road],
-                  ['Food', s.infrastructure.food],
-                  ['Housing', s.housingCapacity],
-                  ['Storage', s.infrastructure.storage],
-                  ['Production', s.infrastructure.production],
-                  ['Health', s.infrastructure.health],
-                  ['Education', s.infrastructure.education],
-                  ['Safety', s.infrastructure.safety],
+                  [t('set.roads'), s.infrastructure.road],
+                  [t('hud.food'), s.infrastructure.food],
+                  [t('hud.housing'), s.housingCapacity],
+                  [t('insp.storage'), s.infrastructure.storage],
+                  [t('hud.production'), s.infrastructure.production],
+                  [t('set.health'), s.infrastructure.health],
+                  [t('set.education'), s.infrastructure.education],
+                  [t('set.safety'), s.infrastructure.safety],
                 ] as [string, number][]
               ).map(([label, value]) => (
                 <div key={label} style={{ marginBottom: 7 }}>
@@ -92,12 +107,12 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
 
             <div>
               <div className="section-label" style={{ marginTop: 0 }}>
-                Growth
+                {t('set.growth')}
               </div>
               {s.nextTierNeeds() ? (
                 <>
                   <div className="tiny muted" style={{ marginBottom: 10, lineHeight: 1.6 }}>
-                    To become a {s.nextTierName()?.toLowerCase()}, this settlement needs:
+                    {t('set.toBecome', { tier: s.nextTierName() ?? '' })}
                   </div>
                   {s.nextTierNeeds()!.map((n) => (
                     <div key={n.label} style={{ marginBottom: 7 }}>
@@ -112,12 +127,12 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
                   ))}
                 </>
               ) : (
-                <div className="tiny muted">This settlement has grown as far as it can.</div>
+                <div className="tiny muted">{t('set.grownFully')}</div>
               )}
 
-              <div className="section-label">What is holding things up</div>
+              <div className="section-label">{t('set.holdingUp')}</div>
               {world.economy.bottlenecks.length === 0 && (
-                <div className="tiny muted">Nothing obvious. The settlement is running smoothly.</div>
+                <div className="tiny muted">{t('set.runningSmoothly')}</div>
               )}
               {world.economy.bottlenecks.map((b, i) => (
                 <div className="list-row" key={i} style={{ gridTemplateColumns: '1fr auto', marginBottom: 5 }}>
@@ -151,7 +166,7 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
                     width: 10,
                     height: 10,
                     borderRadius: 2,
-                    background: hexToCss(PROFESSIONS[n.profession].cloak),
+                    background: hexToCss(professionColour(n.profession)),
                   }}
                 />
                 <span>{n.name}</span>
@@ -173,12 +188,12 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
                 >
                   {ALL_PROFESSIONS.map((p) => (
                     <option key={p} value={p}>
-                      {PROFESSIONS[p].name}
+                      {professionName(p)}
                     </option>
                   ))}
                 </select>
-                <span className="tiny muted">{ACTIVITY_LABELS[n.activity]}</span>
-                <span className="tiny muted">{n.moodLabel()}</span>
+                <span className="tiny muted">{activityName(n.activity)}</span>
+                <span className="tiny muted">{moodName(n.needs.mood)}</span>
                 <div>
                   <Bar
                     value={n.needs.mood / 100}
@@ -187,7 +202,7 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
                 </div>
               </div>
             ))}
-            {world.npcs.length === 0 && <EmptyNote>Nobody lives here.</EmptyNote>}
+            {world.npcs.length === 0 && <EmptyNote>{t('set.nobodyLives')}</EmptyNote>}
           </div>
         )}
 
@@ -197,7 +212,7 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
               {stored.map(([item, count]) => (
                 <div className="list-row" key={item} style={{ gridTemplateColumns: '24px 1fr 90px 70px' }}>
                   <ItemIcon item={item} size={18} />
-                  <span>{ITEMS[item].name}</span>
+                  <span>{itemName(item)}</span>
                   <span className="tiny muted">{ITEMS[item].category}</span>
                   <span className="mono right">{count}</span>
                 </div>
@@ -205,7 +220,7 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
             </div>
             {stored.length === 0 && (
               <EmptyNote>
-                Nothing is in store yet. Build a stockpile, and haulers will start bringing goods in.
+                {t('set.nothingInStore')}
               </EmptyNote>
             )}
           </>
@@ -224,8 +239,8 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
                   onClose();
                 }}
               >
-                <span>{b.def.name}</span>
-                <span className="tiny muted">{b.statusText()}</span>
+                <span>{buildingName(b.defId)}</span>
+                <span className="tiny muted">{buildingStatus(b)}</span>
                 <div>{!b.complete && <Bar value={b.progress} />}</div>
                 <span className="mono tiny right">
                   {b.complete ? `${Math.round(b.condition * 100)}%` : `${Math.round(b.progress * 100)}%`}
@@ -233,7 +248,7 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
               </div>
             ))}
             {world.buildings.length === 0 && (
-              <EmptyNote>Nothing has been built or marked out yet. Press B to start.</EmptyNote>
+              <EmptyNote>{t('set.nothingBuilt')}</EmptyNote>
             )}
           </div>
         )}

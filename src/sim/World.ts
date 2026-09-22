@@ -148,7 +148,8 @@ export class World {
     this.log.add(
       this.time,
       'settlement',
-      `${this.config.name} is founded. ${this.npcs.length} settlers arrive with what they could carry.`,
+      'ev.founded',
+      { name: this.config.name, count: this.npcs.length },
       { notable: true, x: this.settlement.centre.x, z: this.settlement.centre.z },
     );
   }
@@ -489,7 +490,7 @@ export class World {
       this.mineOre.set(b.id, oreItemsFor(vein));
     }
 
-    this.log.add(this.time, 'construction', `${b.def.name} marked out for construction.`, {
+    this.log.add(this.time, 'construction', 'ev.blueprint', { name: b.defId }, {
       x: b.worldX,
       z: b.worldZ,
     });
@@ -527,7 +528,7 @@ export class World {
       if (slot) this.dropPile(slot.item, slot.count, b.worldX, b.worldZ);
     }
     this.destroyBuilding(b);
-    this.log.add(this.time, 'construction', `${b.def.name} project cancelled.`);
+    this.log.add(this.time, 'construction', 'ev.cancelled', { name: b.defId });
   }
 
   startDemolition(b: Building): void {
@@ -537,7 +538,7 @@ export class World {
     }
     b.demolishing = true;
     b.demolishWork = 0;
-    this.log.add(this.time, 'construction', `${b.def.name} scheduled for demolition.`);
+    this.log.add(this.time, 'construction', 'ev.demolishScheduled', { name: b.defId });
   }
 
   completeDemolition(b: Building): void {
@@ -549,7 +550,10 @@ export class World {
     for (const slot of b.inventory.slots) {
       if (slot) this.dropPile(slot.item, slot.count, b.worldX, b.worldZ);
     }
-    this.log.add(this.time, 'construction', `${b.def.name} demolished.`, { x: b.worldX, z: b.worldZ });
+    this.log.add(this.time, 'construction', 'ev.demolished', { name: b.defId }, {
+      x: b.worldX,
+      z: b.worldZ,
+    });
     this.destroyBuilding(b);
   }
 
@@ -607,10 +611,13 @@ export class World {
       this.nav.markCostDirty();
     }
 
-    this.log.add(this.time, 'construction', `${b.def.name}: ${justDone.name} complete.`, {
-      x: b.worldX,
-      z: b.worldZ,
-    });
+    this.log.add(
+      this.time,
+      'construction',
+      'ev.stageDone',
+      { name: b.defId, stage: justDone.id },
+      { x: b.worldX, z: b.worldZ },
+    );
   }
 
   onBuildingCompleted(b: Building, builder?: Npc): void {
@@ -634,12 +641,13 @@ export class World {
 
     if (b.def.farmPlots) this.createFarmPlots(b);
 
-    const who = builder ? ` ${builder.name} drove the last peg.` : '';
-    this.log.add(this.time, 'construction', `${b.def.name} completed.${who}`, {
-      notable: true,
-      x: b.worldX,
-      z: b.worldZ,
-    });
+    this.log.add(
+      this.time,
+      'construction',
+      builder ? 'ev.completedBy' : 'ev.completed',
+      { name: b.defId, who: builder ? builder.name : '' },
+      { notable: true, x: b.worldX, z: b.worldZ },
+    );
 
     if (b.def.housing) this.advanceTutorial(5);
     this.advanceTutorial(4);
@@ -1221,7 +1229,7 @@ export class World {
 
     this.weather.update(dt, hours / Math.max(dt, 1e-6), this.time.season);
     if (this.weather.justChanged) {
-      this.log.add(this.time, 'weather', `The weather turns to ${this.weather.label.toLowerCase()}.`);
+      this.log.add(this.time, 'weather', 'ev.weatherTurns', { weather: this.weather.current });
     }
 
     this.nav.resetBudget(6);
@@ -1264,19 +1272,19 @@ export class World {
     if (this.research.justCompleted) {
       const id = this.research.justCompleted;
       this.research.clearJustCompleted();
-      this.log.add(this.time, 'settlement', `Research complete: ${id.replace(/_/g, ' ')}.`, {
-        notable: true,
-      });
+      this.log.add(this.time, 'settlement', 'ev.researchDone', { name: id }, { notable: true });
     }
 
     if (this.settlement.justPromoted) {
       const tier = this.settlement.justPromoted;
       this.settlement.clearPromotion();
-      this.log.add(this.time, 'settlement', `${this.config.name} has grown into a ${tier}.`, {
-        notable: true,
-        x: this.settlement.centre.x,
-        z: this.settlement.centre.z,
-      });
+      this.log.add(
+        this.time,
+        'settlement',
+        'ev.promoted',
+        { name: this.config.name, tier },
+        { notable: true, x: this.settlement.centre.x, z: this.settlement.centre.z },
+      );
     }
   }
 
@@ -1424,11 +1432,7 @@ export class World {
     const x = clamp(s.centre.x + Math.cos(a) * r, 5, this.terrain.worldSize - 5);
     const z = clamp(s.centre.z + Math.sin(a) * r, 5, this.terrain.worldSize - 5);
     const npc = this.spawnNpc(x, z, 'settler');
-    this.log.add(this.time, 'people', `${npc.name} arrives looking for work.`, {
-      notable: true,
-      x,
-      z,
-    });
+    this.log.add(this.time, 'people', 'ev.migrant', { name: npc.name }, { notable: true, x, z });
   }
 
   private rollDailyEvent(): void {
@@ -1437,7 +1441,7 @@ export class World {
     const options: (() => void)[] = [];
 
     options.push(() => {
-      this.log.add(this.time, 'discovery', 'A good day for foraging — the hedgerows are heavy with fruit.');
+      this.log.add(this.time, 'discovery', 'ev.goodForaging');
       let planted = 0;
       for (let i = 0; i < 24 && planted < 12; i++) {
         const a = this.rng.range(0, Math.PI * 2);
@@ -1454,7 +1458,7 @@ export class World {
         if (roads.length > 0 && this.weather.severity > 0.4) {
           const victim = this.rng.pick(roads);
           victim.condition = 0.4;
-          this.log.add(this.time, 'weather', 'Heavy rain has washed out part of the road.', {
+          this.log.add(this.time, 'weather', 'ev.roadWashedOut', undefined, {
             notable: true,
             x: victim.worldX,
             z: victim.worldZ,
@@ -1465,7 +1469,7 @@ export class World {
 
     if (this.wildlife.length > 10) {
       options.push(() => {
-        this.log.add(this.time, 'discovery', 'Game is moving through the valley — good hunting.');
+        this.log.add(this.time, 'discovery', 'ev.gameMoving');
         for (let i = 0; i < 6; i++) {
           const a = this.rng.range(0, Math.PI * 2);
           const r = this.rng.range(30, 90);
@@ -1518,11 +1522,13 @@ export class World {
       if (p.discovered) continue;
       if (Math.hypot(p.x - x, p.z - z) < 38) {
         p.discovered = true;
-        this.log.add(this.time, 'discovery', `Found ${p.name}. ${p.lore}`, {
-          notable: true,
-          x: p.x,
-          z: p.z,
-        });
+        this.log.add(
+          this.time,
+          'discovery',
+          'ev.discovered',
+          { name: p.name, lore: p.lore },
+          { notable: true, x: p.x, z: p.z },
+        );
         return p;
       }
     }

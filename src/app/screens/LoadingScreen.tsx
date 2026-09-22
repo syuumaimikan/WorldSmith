@@ -1,27 +1,25 @@
 import { useEffect, useState } from 'react';
 import { GenerationProgress } from '../../game/WorldLoader';
+import { useT } from '../../i18n';
 
 interface Props {
   progress: GenerationProgress;
 }
 
-const FLAVOUR = [
-  'A river finds the lowest ground, and everything else follows the river.',
-  'Forests grow where the rain reaches; deserts sit in the shadow of mountains.',
-  'Settlements gather where flat ground, fresh water and timber meet.',
-  'Every plank in this world will have to be sawn from a log somebody felled.',
-  'A house is not placed. It is staked out, footed, framed, walled and roofed.',
-  'Roads halve the time a hauler spends walking. They are worth more than they look.',
-  'Nothing arrives on site by itself. Someone carries it there.',
-  'Cut a forest faster than it grows and it will not be there next winter.',
+const FLAVOUR_KEYS = [
+  'flavour.1', 'flavour.2', 'flavour.3', 'flavour.4',
+  'flavour.5', 'flavour.6', 'flavour.7', 'flavour.8',
 ];
 
 export function LoadingScreen({ progress }: Props): JSX.Element {
-  const [flavourIndex, setFlavourIndex] = useState(() => Math.floor(Math.random() * FLAVOUR.length));
+  const t = useT();
+  const [flavourIndex, setFlavourIndex] = useState(() =>
+    Math.floor(Math.random() * FLAVOUR_KEYS.length),
+  );
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      setFlavourIndex((i) => (i + 1) % FLAVOUR.length);
+      setFlavourIndex((i) => (i + 1) % FLAVOUR_KEYS.length);
     }, 4800);
     return () => window.clearInterval(id);
   }, []);
@@ -35,12 +33,12 @@ export function LoadingScreen({ progress }: Props): JSX.Element {
           World<em>Smith</em>
         </h1>
       </div>
-      <div className="loading-stage">{progress.stage}</div>
+      <div className="loading-stage">{t(progress.stage)}</div>
       <div className="loading-bar">
         <div style={{ width: `${pct}%` }} />
       </div>
       <div className="loading-detail">{pct}%</div>
-      <div className="loading-flavour">{FLAVOUR[flavourIndex]}</div>
+      <div className="loading-flavour">{t(FLAVOUR_KEYS[flavourIndex])}</div>
     </div>
   );
 }

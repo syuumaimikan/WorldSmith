@@ -41,6 +41,12 @@ export function isWaterBiome(b: Biome): boolean {
 export type ClimatePreset = 'temperate' | 'cold' | 'warm' | 'arid';
 export type WorldSizePreset = 'small' | 'medium' | 'large';
 export type Difficulty = 'relaxed' | 'normal' | 'harsh';
+/**
+ * How much history the world already has when the player arrives. An
+ * ancient world is run forward through centuries of simulated settlement
+ * before play begins, leaving ruins, old roads and named places behind.
+ */
+export type WorldEra = 'fresh' | 'ancient';
 
 export interface WorldConfig {
   name: string;
@@ -56,6 +62,7 @@ export interface WorldConfig {
   resourceDensity: number;
   startingSettlers: number;
   difficulty: Difficulty;
+  era: WorldEra;
 }
 
 export const WORLD_SIZE_TILES: Record<WorldSizePreset, number> = {

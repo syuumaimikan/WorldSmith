@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
 import { Game } from '../../game/Game';
-import {
-  ALL_BUILDING_IDS,
-  BUILDINGS,
-  BuildingCategory,
-  BuildingId,
-  CATEGORY_LABELS,
-} from '../../data/buildings';
-import { ITEMS, ItemId } from '../../data/items';
-import { RESEARCH } from '../../data/research';
+import { ALL_BUILDING_IDS, BUILDINGS, BuildingCategory, BuildingId } from '../../data/buildings';
+import { ItemId } from '../../data/items';
 import { Window } from '../components/common';
+import { useT } from '../../i18n';
+import {
+  buildingDescription,
+  buildingName,
+  categoryName,
+  itemName,
+  recipeName,
+  researchName,
+  stageName,
+} from '../../i18n/names';
 
 interface Props {
   game: Game;
@@ -28,6 +31,7 @@ const CATEGORIES: BuildingCategory[] = [
 ];
 
 export function BuildPanel({ game, onClose }: Props): JSX.Element {
+  const t = useT();
   const world = game.world;
   const [category, setCategory] = useState<BuildingCategory>('housing');
   const [search, setSearch] = useState('');
@@ -50,7 +54,12 @@ export function BuildPanel({ game, onClose }: Props): JSX.Element {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return ALL_BUILDING_IDS.map((id) => BUILDINGS[id]).filter((d) => {
-      if (q) return d.name.toLowerCase().includes(q) || d.description.toLowerCase().includes(q);
+      if (q) {
+        return (
+          buildingName(d.id).toLowerCase().includes(q) ||
+          buildingDescription(d.id).toLowerCase().includes(q)
+        );
+      }
       return d.category === category;
     });
   }, [category, search]);
@@ -68,11 +77,11 @@ export function BuildPanel({ game, onClose }: Props): JSX.Element {
   };
 
   return (
-    <Window title="Build" onClose={onClose} width="wide">
+    <Window title={t('build.title')} onClose={onClose} width="wide">
       <div className="field" style={{ marginBottom: 12 }}>
         <input
           type="text"
-          placeholder="Search buildings…"
+          placeholder={t('build.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onFocus={() => (game.input.textFocus = true)}
@@ -91,7 +100,7 @@ export function BuildPanel({ game, onClose }: Props): JSX.Element {
                 setSearch('');
               }}
             >
-              {CATEGORY_LABELS[c]}
+              {categoryName(c)}
             </button>
           ))}
         </div>
@@ -104,40 +113,44 @@ export function BuildPanel({ game, onClose }: Props): JSX.Element {
                 key={d.id}
                 className={`build-card ${selected === d.id ? 'active' : ''} ${locked ? 'locked' : ''}`}
                 onClick={() => choose(d.id)}
-                title={locked && d.requiresResearch ? `Needs ${RESEARCH[d.requiresResearch].name}` : d.description}
+                title={
+                  locked && d.requiresResearch
+                    ? t('build.requires', { name: researchName(d.requiresResearch) })
+                    : buildingDescription(d.id)
+                }
               >
-                <div className="name">{d.name}</div>
+                <div className="name">{buildingName(d.id)}</div>
                 <div className="foot">
-                  {d.linear ? 'drag' : `${d.width}×${d.depth}`}
-                  {locked ? ' · locked' : ''}
+                  {d.linear ? t('build.drag') : `${d.width}\u00d7${d.depth}`}
+                  {locked ? ` \u00b7 ${t('build.locked')}` : ''}
                 </div>
               </button>
             );
           })}
-          {visible.length === 0 && <div className="empty-note">Nothing matches that.</div>}
+          {visible.length === 0 && <div className="empty-note">{t('build.nothingMatches')}</div>}
         </div>
 
         <div className="build-detail">
           {def ? (
             <>
-              <h4>{def.name}</h4>
-              <div className="desc">{def.description}</div>
+              <h4>{buildingName(def.id)}</h4>
+              <div className="desc">{buildingDescription(def.id)}</div>
 
               {!world.research.buildingUnlocked(def.id) && def.requiresResearch && (
                 <div className="pill bad" style={{ marginBottom: 10 }}>
-                  Requires {RESEARCH[def.requiresResearch].name}
+                  {t('build.requires', { name: researchName(def.requiresResearch) })}
                 </div>
               )}
 
-              <div className="section-label">Total materials</div>
+              <div className="section-label">{t('build.totalMaterials')}</div>
               {Object.keys(def.totalMaterials).length === 0 && (
-                <div className="tiny muted">Labour only — no materials needed.</div>
+                <div className="tiny muted">{t('build.labourOnly')}</div>
               )}
               {(Object.entries(def.totalMaterials) as [ItemId, number][]).map(([item, need]) => {
                 const have = stored.get(item) ?? 0;
                 return (
                   <div className="mat-row" key={item}>
-                    <span>{ITEMS[item].name}</span>
+                    <span>{itemName(item)}</span>
                     <span className={have >= need ? 'have' : 'short'}>
                       {have}/{need}
                     </span>
@@ -145,24 +158,26 @@ export function BuildPanel({ game, onClose }: Props): JSX.Element {
                 );
               })}
 
-              <div className="section-label">Construction stages</div>
+              <div className="section-label">{t('build.stages')}</div>
               {def.stages.map((s, i) => (
                 <div className="mat-row" key={s.id + i}>
                   <span className="tiny">
-                    {i + 1}. {s.name}
+                    {i + 1}. {stageName(s.id, s.name)}
                   </span>
-                  <span className="tiny muted">{s.work} work</span>
+                  <span className="tiny muted">{t('build.work', { value: s.work })}</span>
                 </div>
               ))}
 
-              <div className="section-label">Once complete</div>
+              <div className="section-label">{t('build.onceComplete')}</div>
               <div className="tiny muted" style={{ lineHeight: 1.6 }}>
-                {def.housing ? `Houses ${def.housing} settlers. ` : ''}
-                {def.workSlots ? `Employs ${def.workSlots}. ` : ''}
-                {def.storageSlots ? `Stores ${def.storageSlots} stacks. ` : ''}
-                {def.recipes?.length ? `Can make: ${def.recipes.map((r) => r.replace(/_/g, ' ')).join(', ')}. ` : ''}
-                {def.gathers ? `Extracts ${def.gathers}. ` : ''}
-                {def.farmPlots ? `Farms ${def.farmPlots} plots. ` : ''}
+                {def.housing ? t('build.houses', { count: def.housing }) + ' ' : ''}
+                {def.workSlots ? t('build.employs', { count: def.workSlots }) + ' ' : ''}
+                {def.storageSlots ? t('build.stores', { count: def.storageSlots }) + ' ' : ''}
+                {def.recipes?.length
+                  ? t('build.canMake', { list: def.recipes.map(recipeName).join(', ') }) + ' '
+                  : ''}
+                {def.gathers ? t('build.extracts', { what: def.gathers }) + ' ' : ''}
+                {def.farmPlots ? t('build.farms', { count: def.farmPlots }) + ' ' : ''}
               </div>
 
               <button
@@ -171,15 +186,14 @@ export function BuildPanel({ game, onClose }: Props): JSX.Element {
                 disabled={!world.research.buildingUnlocked(def.id)}
                 onClick={place}
               >
-                Place blueprint
+                {t('build.place')}
               </button>
               <div className="tiny muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
-                Placing marks out a site. Your settlers then have to deliver the materials and do
-                the work.
+                {t('build.placeNote')}
               </div>
             </>
           ) : (
-            <div className="empty-note">Choose something to build.</div>
+            <div className="empty-note">{t('build.chooseSomething')}</div>
           )}
         </div>
       </div>

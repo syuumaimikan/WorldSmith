@@ -1,30 +1,24 @@
 import { useState } from 'react';
 import { NewWorldOptions } from '../../game/WorldLoader';
-import { ClimatePreset, Difficulty, WorldSizePreset, WORLD_SIZE_TILES, TILE_SIZE } from '../../world/types';
+import {
+  ClimatePreset,
+  Difficulty,
+  WorldSizePreset,
+  WorldEra,
+  WORLD_SIZE_TILES,
+  TILE_SIZE,
+} from '../../world/types';
+import { useT } from '../../i18n';
 
 interface Props {
   onCancel: () => void;
   onCreate: (options: NewWorldOptions) => void;
 }
 
-const SIZES: { id: WorldSizePreset; label: string; note: string }[] = [
-  { id: 'small', label: 'Small', note: `${(WORLD_SIZE_TILES.small * TILE_SIZE) / 1000} km across` },
-  { id: 'medium', label: 'Medium', note: `${(WORLD_SIZE_TILES.medium * TILE_SIZE) / 1000} km across` },
-  { id: 'large', label: 'Large', note: `${(WORLD_SIZE_TILES.large * TILE_SIZE) / 1000} km across` },
-];
-
-const CLIMATES: { id: ClimatePreset; label: string; note: string }[] = [
-  { id: 'temperate', label: 'Temperate', note: 'Mixed forest, four clear seasons' },
-  { id: 'cold', label: 'Cold', note: 'Taiga and tundra, hard winters' },
-  { id: 'warm', label: 'Warm', note: 'Long growing season, storms' },
-  { id: 'arid', label: 'Arid', note: 'Dry plains, scarce timber' },
-];
-
-const DIFFICULTIES: { id: Difficulty; label: string; note: string }[] = [
-  { id: 'relaxed', label: 'Relaxed', note: 'Generous supplies, forgiving winters' },
-  { id: 'normal', label: 'Normal', note: 'The intended balance' },
-  { id: 'harsh', label: 'Harsh', note: 'Little margin for error' },
-];
+const SIZES: WorldSizePreset[] = ['small', 'medium', 'large'];
+const CLIMATES: ClimatePreset[] = ['temperate', 'cold', 'warm', 'arid'];
+const DIFFICULTIES: Difficulty[] = ['relaxed', 'normal', 'harsh'];
+const ERAS: WorldEra[] = ['fresh', 'ancient'];
 
 const NAME_SUGGESTIONS = [
   'Newholt', 'Ashford', 'Greyvale', 'Brackwater', 'Elderfell', 'Stonereach',
@@ -32,36 +26,46 @@ const NAME_SUGGESTIONS = [
 ];
 
 export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
-  const [name, setName] = useState(() => NAME_SUGGESTIONS[Math.floor(Math.random() * NAME_SUGGESTIONS.length)]);
+  const t = useT();
+  const [name, setName] = useState(
+    () => NAME_SUGGESTIONS[Math.floor(Math.random() * NAME_SUGGESTIONS.length)],
+  );
   const [seedText, setSeedText] = useState(() => Math.floor(Math.random() * 1e9).toString(36));
   const [size, setSize] = useState<WorldSizePreset>('medium');
   const [climate, setClimate] = useState<ClimatePreset>('temperate');
   const [resourceDensity, setResourceDensity] = useState(1);
   const [settlers, setSettlers] = useState(6);
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
+  const [era, setEra] = useState<WorldEra>('fresh');
 
   const submit = (): void => {
-    onCreate({ name, seedText, size, climate, resourceDensity, startingSettlers: settlers, difficulty });
+    onCreate({
+      name,
+      seedText,
+      size,
+      climate,
+      resourceDensity,
+      startingSettlers: settlers,
+      difficulty,
+      era,
+    });
   };
 
   return (
     <div className="menu-screen">
       <div className="title-block">
         <h1 className="title" style={{ fontSize: 40 }}>
-          New World
+          {t('new.heading')}
         </h1>
       </div>
 
       <div className="panel form-card">
-        <h2>Found a settlement</h2>
-        <div className="hint">
-          Your settlers arrive with what they can carry. Everything else has to be cut, quarried,
-          hauled and built.
-        </div>
+        <h2>{t('new.found')}</h2>
+        <div className="hint">{t('new.hint')}</div>
 
         <div className="two-col">
           <div className="field">
-            <label htmlFor="world-name">Settlement name</label>
+            <label htmlFor="world-name">{t('new.name')}</label>
             <input
               id="world-name"
               type="text"
@@ -71,7 +75,7 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
             />
           </div>
           <div className="field">
-            <label htmlFor="world-seed">Seed</label>
+            <label htmlFor="world-seed">{t('new.seed')}</label>
             <input
               id="world-seed"
               type="text"
@@ -83,32 +87,48 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
         </div>
 
         <div className="field">
-          <label>World size</label>
+          <label>{t('new.size')}</label>
           <div className="choice-row">
             {SIZES.map((s) => (
               <button
-                key={s.id}
-                className={`choice ${size === s.id ? 'active' : ''}`}
-                onClick={() => setSize(s.id)}
+                key={s}
+                className={`choice ${size === s ? 'active' : ''}`}
+                onClick={() => setSize(s)}
               >
-                {s.label}
-                <small>{s.note}</small>
+                {t(`new.size.${s}`)}
+                <small>{t('new.size.note', { km: (WORLD_SIZE_TILES[s] * TILE_SIZE) / 1000 })}</small>
               </button>
             ))}
           </div>
         </div>
 
         <div className="field">
-          <label>Climate</label>
+          <label>{t('new.climate')}</label>
           <div className="choice-row">
             {CLIMATES.map((c) => (
               <button
-                key={c.id}
-                className={`choice ${climate === c.id ? 'active' : ''}`}
-                onClick={() => setClimate(c.id)}
+                key={c}
+                className={`choice ${climate === c ? 'active' : ''}`}
+                onClick={() => setClimate(c)}
               >
-                {c.label}
-                <small>{c.note}</small>
+                {t(`new.climate.${c}`)}
+                <small>{t(`new.climate.${c}.note`)}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <label>{t('new.era')}</label>
+          <div className="choice-row">
+            {ERAS.map((e) => (
+              <button
+                key={e}
+                className={`choice ${era === e ? 'active' : ''}`}
+                onClick={() => setEra(e)}
+              >
+                {t(`new.era.${e}`)}
+                <small>{t(`new.era.${e}.note`)}</small>
               </button>
             ))}
           </div>
@@ -116,7 +136,9 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
 
         <div className="two-col">
           <div className="field">
-            <label htmlFor="density">Resource density — {resourceDensity.toFixed(2)}x</label>
+            <label htmlFor="density">
+              {t('new.density', { value: resourceDensity.toFixed(2) })}
+            </label>
             <input
               id="density"
               type="range"
@@ -128,7 +150,7 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
             />
           </div>
           <div className="field">
-            <label htmlFor="settlers">Starting settlers — {settlers}</label>
+            <label htmlFor="settlers">{t('new.settlers', { value: settlers })}</label>
             <input
               id="settlers"
               type="range"
@@ -142,16 +164,16 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
         </div>
 
         <div className="field">
-          <label>Difficulty</label>
+          <label>{t('new.difficulty')}</label>
           <div className="choice-row">
             {DIFFICULTIES.map((d) => (
               <button
-                key={d.id}
-                className={`choice ${difficulty === d.id ? 'active' : ''}`}
-                onClick={() => setDifficulty(d.id)}
+                key={d}
+                className={`choice ${difficulty === d ? 'active' : ''}`}
+                onClick={() => setDifficulty(d)}
               >
-                {d.label}
-                <small>{d.note}</small>
+                {t(`new.difficulty.${d}`)}
+                <small>{t(`new.difficulty.${d}.note`)}</small>
               </button>
             ))}
           </div>
@@ -159,10 +181,10 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
 
         <div className="form-actions">
           <button className="btn ghost" onClick={onCancel}>
-            Back
+            {t('new.back')}
           </button>
           <button className="btn primary" style={{ minWidth: 180 }} onClick={submit}>
-            Create World
+            {t('new.create')}
           </button>
         </div>
       </div>

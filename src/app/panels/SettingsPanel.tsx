@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { GameSettings } from '../../game/Game';
 import { Tabs, Window } from '../components/common';
-import { ACTION_LABELS, Action, DEFAULT_BINDINGS, Input } from '../../engine/Input';
+import { Action, DEFAULT_BINDINGS, Input } from '../../engine/Input';
 import { loadBindings, saveBindings } from '../../persistence/settings';
 import { QualityLevel } from '../../engine/Renderer';
+import { LOCALES, Locale, getLocale, setLocale, useT } from '../../i18n';
 
 interface Props {
   settings: GameSettings;
@@ -14,13 +15,12 @@ interface Props {
 
 type Tab = 'display' | 'controls' | 'game';
 
-const QUALITIES: { id: QualityLevel; label: string; note: string }[] = [
-  { id: 'low', label: 'Low', note: 'No shadows, 1x resolution' },
-  { id: 'medium', label: 'Medium', note: 'Soft shadows, reduced resolution' },
-  { id: 'high', label: 'High', note: 'Soft shadows, full resolution' },
-];
+const QUALITIES: QualityLevel[] = ['low', 'medium', 'high'];
+
+const ACTIONS: Action[] = Object.keys(DEFAULT_BINDINGS) as Action[];
 
 export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props): JSX.Element {
+  const t = useT();
   const [tab, setTab] = useState<Tab>('display');
   const [bindings, setBindings] = useState(() => loadBindings());
   const [listening, setListening] = useState<Action | null>(null);
@@ -44,14 +44,15 @@ export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props):
   }, [listening, bindings, onRebind]);
 
   const set = (patch: Partial<GameSettings>): void => onChange({ ...settings, ...patch });
+  const locale = getLocale();
 
   return (
-    <Window title="Settings" onClose={onClose} width="narrow">
+    <Window title={t('settings.title')} onClose={onClose} width="narrow">
       <Tabs<Tab>
         tabs={[
-          { id: 'display', label: 'Display' },
-          { id: 'controls', label: 'Controls' },
-          { id: 'game', label: 'Game' },
+          { id: 'display', label: t('settings.display') },
+          { id: 'controls', label: t('settings.controls') },
+          { id: 'game', label: t('settings.game') },
         ]}
         active={tab}
         onChange={setTab}
@@ -61,16 +62,31 @@ export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props):
         {tab === 'display' && (
           <>
             <div className="field">
-              <label>Graphics quality</label>
+              <label>{t('settings.language')}</label>
+              <div className="choice-row">
+                {LOCALES.map((l) => (
+                  <button
+                    key={l.id}
+                    className={`choice ${locale === l.id ? 'active' : ''}`}
+                    onClick={() => setLocale(l.id as Locale)}
+                  >
+                    {l.nativeLabel}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="field">
+              <label>{t('settings.quality')}</label>
               <div className="choice-row">
                 {QUALITIES.map((q) => (
                   <button
-                    key={q.id}
-                    className={`choice ${settings.quality === q.id ? 'active' : ''}`}
-                    onClick={() => set({ quality: q.id })}
+                    key={q}
+                    className={`choice ${settings.quality === q ? 'active' : ''}`}
+                    onClick={() => set({ quality: q })}
                   >
-                    {q.label}
-                    <small>{q.note}</small>
+                    {t(`settings.quality.${q}`)}
+                    <small>{t(`settings.quality.${q}.note`)}</small>
                   </button>
                 ))}
               </div>
@@ -81,7 +97,9 @@ export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props):
         {tab === 'controls' && (
           <>
             <div className="field">
-              <label htmlFor="sens">Mouse sensitivity — {settings.mouseSensitivity.toFixed(2)}x</label>
+              <label htmlFor="sens">
+                {t('settings.sensitivity', { value: settings.mouseSensitivity.toFixed(2) })}
+              </label>
               <input
                 id="sens"
                 type="range"
@@ -99,25 +117,25 @@ export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props):
                   checked={settings.invertY}
                   onChange={(e) => set({ invertY: e.target.checked })}
                 />{' '}
-                Invert vertical look
+                {t('settings.invertY')}
               </label>
             </div>
 
-            <div className="section-label">Key bindings</div>
+            <div className="section-label">{t('settings.bindings')}</div>
             <div className="tiny muted" style={{ marginBottom: 8 }}>
-              Click a binding then press a key. Escape cancels.
+              {t('settings.bindingsNote')}
             </div>
             <div className="list">
-              {(Object.keys(ACTION_LABELS) as Action[]).map((action) => (
-                <div className="list-row" key={action} style={{ gridTemplateColumns: '1fr 110px' }}>
-                  <span>{ACTION_LABELS[action]}</span>
+              {ACTIONS.map((action) => (
+                <div className="list-row" key={action} style={{ gridTemplateColumns: '1fr 120px' }}>
+                  <span>{t(`action.${action}`)}</span>
                   <button
                     className="btn small"
                     style={{ textAlign: 'center' }}
                     onClick={() => setListening(action)}
                   >
                     {listening === action
-                      ? 'press a key…'
+                      ? t('settings.pressKey')
                       : (bindings[action] ?? DEFAULT_BINDINGS[action]).map(Input.keyLabel).join(' / ')}
                   </button>
                 </div>
@@ -129,7 +147,9 @@ export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props):
         {tab === 'game' && (
           <>
             <div className="field">
-              <label htmlFor="vol">Volume — {Math.round(settings.masterVolume * 100)}%</label>
+              <label htmlFor="vol">
+                {t('settings.volume', { value: Math.round(settings.masterVolume * 100) })}
+              </label>
               <input
                 id="vol"
                 type="range"
@@ -142,7 +162,12 @@ export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props):
             </div>
             <div className="field">
               <label htmlFor="autosave">
-                Autosave — {settings.autosaveMinutes === 0 ? 'off' : `every ${settings.autosaveMinutes} min`}
+                {t('settings.autosave', {
+                  value:
+                    settings.autosaveMinutes === 0
+                      ? t('settings.autosaveOff')
+                      : t('settings.autosaveEvery', { n: settings.autosaveMinutes }),
+                })}
               </label>
               <input
                 id="autosave"
@@ -161,7 +186,7 @@ export function SettingsPanel({ settings, onChange, onClose, onRebind }: Props):
                   checked={settings.showTutorial}
                   onChange={(e) => set({ showTutorial: e.target.checked })}
                 />{' '}
-                Show guidance prompts
+                {t('settings.showTutorial')}
               </label>
             </div>
           </>

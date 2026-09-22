@@ -1,4 +1,5 @@
 import { SaveSummary } from '../../persistence/saves';
+import { useT } from '../../i18n';
 
 interface Props {
   saves: SaveSummary[];
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function MainMenu({ saves, onNew, onContinue, onDeleteSave, onSettings }: Props): JSX.Element {
+  const t = useT();
   const latest = saves[0];
 
   return (
@@ -17,57 +19,61 @@ export function MainMenu({ saves, onNew, onContinue, onDeleteSave, onSettings }:
         <h1 className="title">
           World<em>Smith</em>
         </h1>
-        <div className="subtitle">Nothing here is built in a moment</div>
+        <div className="subtitle">{t('app.tagline')}</div>
       </div>
 
       <div className="menu-actions">
         <button className="btn primary" onClick={onNew}>
-          New World
+          {t('menu.newWorld')}
         </button>
         {latest && (
           <button className="btn" onClick={() => onContinue(latest.id)}>
-            Continue — {latest.name}
+            {t('menu.continue')} — {latest.name}
             <div className="tiny muted" style={{ marginTop: 3 }}>
-              Year {latest.year}, day {latest.day} · {latest.population} settlers ·{' '}
-              {latest.buildings} buildings
+              {t('menu.saveSummary', {
+                year: latest.year,
+                day: latest.day,
+                population: latest.population,
+                buildings: latest.buildings,
+              })}
             </div>
           </button>
         )}
         <button className="btn ghost" onClick={onSettings}>
-          Settings
+          {t('menu.settings')}
         </button>
       </div>
 
       {saves.length > 0 && (
         <div className="panel form-card" style={{ maxWidth: 560 }}>
           <div className="section-label" style={{ marginTop: 0 }}>
-            Saved worlds
+            {t('menu.savedWorlds')}
           </div>
           <div className="list">
             {saves.map((s) => (
-              <div
-                className="list-row"
-                key={s.id}
-                style={{ gridTemplateColumns: '1fr auto auto' }}
-              >
+              <div className="list-row" key={s.id} style={{ gridTemplateColumns: '1fr auto auto' }}>
                 <div>
                   <div>{s.name}</div>
                   <div className="tiny muted mono">
-                    seed {s.seedText} · Y{s.year} d{s.day} · {s.population} settlers
+                    {t('menu.seedLabel', { seed: s.seedText })} ·{' '}
+                    {t('menu.saveSummary', {
+                      year: s.year,
+                      day: s.day,
+                      population: s.population,
+                      buildings: s.buildings,
+                    })}
                   </div>
                 </div>
                 <button className="btn small" onClick={() => onContinue(s.id)}>
-                  Load
+                  {t('menu.load')}
                 </button>
                 <button
                   className="btn small danger ghost"
                   onClick={() => {
-                    if (confirm(`Delete "${s.name}" permanently? This cannot be undone.`)) {
-                      onDeleteSave(s.id);
-                    }
+                    if (confirm(t('menu.deleteConfirm', { name: s.name }))) onDeleteSave(s.id);
                   }}
                 >
-                  Delete
+                  {t('menu.delete')}
                 </button>
               </div>
             ))}
@@ -76,8 +82,7 @@ export function MainMenu({ saves, onNew, onContinue, onDeleteSave, onSettings }:
       )}
 
       <div className="tiny muted" style={{ maxWidth: 520, textAlign: 'center', lineHeight: 1.7 }}>
-        Walk the world yourself while your settlement builds itself around you — one delivered
-        plank, one raised frame, one finished roof at a time.
+        {t('app.blurb')}
       </div>
     </div>
   );

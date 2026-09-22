@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Game } from '../../game/Game';
 import { Window } from '../components/common';
-import { Biome, BIOME_NAMES } from '../../world/types';
+import { Biome } from '../../world/types';
 import { OVERLAY } from '../../world/Terrain';
 import { hexToCss, PALETTE, mixHex, shade } from '../../render/Palette';
 import { clamp01 } from '../../core/math';
+import { useT } from '../../i18n';
+import { biomeName } from '../../i18n/names';
 
 interface Props {
   game: Game;
@@ -34,6 +36,7 @@ const BIOME_COLOURS: Record<Biome, number> = {
 
 export function MapPanel({ game, onClose }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const t = useT();
   const [mode, setMode] = useState<MapMode>('terrain');
   const [hover, setHover] = useState<string>('');
   const world = game.world;
@@ -130,11 +133,11 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
   const scale = MAP_SIZE / world.terrain.worldSize;
 
   return (
-    <Window title="World Map" onClose={onClose} width="normal">
+    <Window title={t('map.title')} onClose={onClose} width="normal">
       <div className="choice-row" style={{ marginBottom: 12 }}>
         {(['terrain', 'biome', 'resources', 'fertility'] as MapMode[]).map((m) => (
           <button key={m} className={`choice ${mode === m ? 'active' : ''}`} onClick={() => setMode(m)}>
-            {m[0].toUpperCase() + m.slice(1)}
+            {t('map.' + m)}
           </button>
         ))}
       </div>
@@ -153,8 +156,8 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
               const known = world.explored[world.terrain.index(tx, tz)] === 1;
               setHover(
                 known
-                  ? `${BIOME_NAMES[biome]} · ${Math.round(world.terrain.heightAt(w.x, w.z))} m`
-                  : 'Unexplored',
+                  ? `${biomeName(biome)} \u00b7 ${Math.round(world.terrain.heightAt(w.x, w.z))} m`
+                  : t('map.unexplored'),
               );
             }}
             onMouseLeave={() => setHover('')}
@@ -217,23 +220,23 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
       </div>
 
       <div className="map-legend">
-        <span className="mono">{hover || 'Click an explored area to travel there.'}</span>
+        <span className="mono">{hover || t('map.clickToTravel')}</span>
       </div>
       <div className="map-legend">
         <span>
-          <i style={{ background: hexToCss(PALETTE.cloak.player) }} /> You
+          <i style={{ background: hexToCss(PALETTE.cloak.player) }} /> {t('map.you')}
         </span>
         <span>
-          <i style={{ background: hexToCss(PALETTE.build.roofTile) }} /> Housing
+          <i style={{ background: hexToCss(PALETTE.build.roofTile) }} /> {t('map.housingLegend')}
         </span>
         <span>
-          <i style={{ background: hexToCss(PALETTE.build.wood) }} /> Other buildings
+          <i style={{ background: hexToCss(PALETTE.build.wood) }} /> {t('map.otherBuildings')}
         </span>
         <span>
-          <i style={{ background: hexToCss(PALETTE.terrain.path) }} /> Roads
+          <i style={{ background: hexToCss(PALETTE.terrain.path) }} /> {t('map.roadsLegend')}
         </span>
         <span>
-          <i style={{ background: '#e0b24a' }} /> Landmarks
+          <i style={{ background: '#e0b24a' }} /> {t('map.landmarks')}
         </span>
       </div>
     </Window>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Window } from '../components/common';
+import { useT } from '../../i18n';
 
 interface Props {
   worldName: string;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function PausePanel({ worldName, onResume, onSave, onSettings, onExit }: Props): JSX.Element {
+  const t = useT();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
 
@@ -18,9 +20,9 @@ export function PausePanel({ worldName, onResume, onSave, onSettings, onExit }: 
     setSaved(null);
     try {
       await onSave();
-      setSaved('Saved.');
+      setSaved(t('pause.saved'));
     } catch (e) {
-      setSaved(e instanceof Error ? `Could not save: ${e.message}` : 'Could not save.');
+      setSaved(t('pause.saveFailed', { error: e instanceof Error ? e.message : String(e) }));
     } finally {
       setSaving(false);
     }
@@ -30,23 +32,21 @@ export function PausePanel({ worldName, onResume, onSave, onSettings, onExit }: 
     <Window title={worldName} onClose={onResume} width="narrow">
       <div className="menu-actions" style={{ width: '100%' }}>
         <button className="btn primary" onClick={onResume}>
-          Resume
+          {t('pause.resume')}
         </button>
         <button className="btn" onClick={() => void save()} disabled={saving}>
-          {saving ? 'Saving…' : 'Save world'}
+          {saving ? t('pause.saving') : t('pause.save')}
         </button>
         <button className="btn" onClick={onSettings}>
-          Settings
+          {t('menu.settings')}
         </button>
         <button
           className="btn danger"
           onClick={() => {
-            if (confirm('Leave this world and return to the menu? Unsaved progress will be lost.')) {
-              onExit();
-            }
+            if (confirm(t('pause.exitConfirm'))) onExit();
           }}
         >
-          Save and exit to menu
+          {t('pause.exit')}
         </button>
       </div>
       {saved && (
@@ -54,16 +54,10 @@ export function PausePanel({ worldName, onResume, onSave, onSettings, onExit }: 
           {saved}
         </div>
       )}
-      <div className="tiny muted" style={{ marginTop: 16, lineHeight: 1.7 }}>
-        <b>Controls</b>
-        <br />
-        WASD move · Shift run · Space jump · Right mouse look · Wheel zoom
-        <br />
-        E interact · F use tool · B build · Tab pack · M map · V camera
-        <br />
-        C settlement · J work · P production · T research · O overlay
-        <br />
-        ` pause · [ and ] change speed · F1 debug
+      <div className="tiny muted" style={{ marginTop: 16, lineHeight: 1.8, whiteSpace: 'pre-line' }}>
+        <b>{t('pause.controls')}</b>
+        {'\n'}
+        {t('pause.controlsBody')}
       </div>
     </Window>
   );

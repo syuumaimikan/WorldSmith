@@ -653,7 +653,7 @@ function executeGather(world: World, npc: Npc, dt: number): void {
   if (result.nodeDepleted) {
     if (node.reservedBy === npc.id) node.reservedBy = 0;
     if (def.category === 'tree') {
-      world.log.add(world.time, 'production', `${npc.name} felled a ${def.name.toLowerCase()}.`);
+      world.log.add(world.time, 'production', 'ev.felled', { who: npc.name, what: node.kind });
     }
     npc.clearTask();
   }

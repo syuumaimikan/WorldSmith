@@ -5,11 +5,20 @@ import { ItemId, ITEMS } from '../../data/items';
 import { ItemIcon } from '../components/common';
 import { hexToCss, PALETTE } from '../../render/Palette';
 import { WorldEvent } from '../../sim/EventLog';
-import { ACTIVITY_LABELS } from '../../sim/Npc';
-import { PROFESSIONS } from '../../data/professions';
-import { OVERLAY_LABELS } from '../../render/OverlayRenderer';
-import { TIER_LABELS } from '../../sim/Settlement';
 import { compactNumber } from '../../core/math';
+import { useT } from '../../i18n';
+import { eventDate, eventText, formatDate } from '../../i18n/events';
+import {
+  activityName,
+  buildingName,
+  itemName,
+  moodName,
+  professionName,
+  resourceName,
+  seasonName,
+  tierName,
+  weatherName,
+} from '../../i18n/names';
 
 export type PanelId =
   | 'none'
@@ -44,6 +53,7 @@ export function Hud({
   tutorialDismissed,
   onDismissTutorial,
 }: Props): JSX.Element {
+  const t = useT();
   const world = game.world;
   const [toasts, setToasts] = useState<WorldEvent[]>([]);
 
@@ -81,16 +91,16 @@ export function Hud({
       {/* ---------------------------------------------------------- top bar */}
       <div className="hud-topbar">
         <div className="hud-clock">{hud.clock}</div>
-        <div className="hud-date">{hud.date}</div>
-        <div className="hud-season">{hud.season}</div>
-        <div className="tiny muted">{hud.weather}</div>
+        <div className="hud-date">{formatDate(hud.year, hud.month, hud.dayOfMonth)}</div>
+        <div className="hud-season">{seasonName(hud.season)}</div>
+        <div className="tiny muted">{weatherName(hud.weather)}</div>
         <div className="tiny muted mono">{Math.round(hud.temperature)}°</div>
         <div className="speed-group">
           {SPEED_OPTIONS.map((s) => (
             <button
               key={s}
               className={`speed-btn ${hud.speed === s ? 'active' : ''}`}
-              title={s === 0 ? 'Pause' : `${s}x speed`}
+              title={s === 0 ? t('hud.pause') : t('hud.speed', { value: s })}
               onClick={() => game.setSpeed(s as GameSpeed)}
             >
               {s === 0 ? '❚❚' : `${s}`}
@@ -102,9 +112,9 @@ export function Hud({
       {/* ------------------------------------------------------------- left */}
       <div className="hud-left">
         <div className="panel stat-bars">
-          <StatBar label="Health" value={player.stats.health / 100} color={PALETTE.ui.bad} />
-          <StatBar label="Stamina" value={player.stats.stamina / 100} color={PALETTE.ui.good} />
-          <StatBar label="Pack" value={player.carriedWeightFraction()} color={PALETTE.ui.warn} />
+          <StatBar label={t('hud.health')} value={player.stats.health / 100} color={PALETTE.ui.bad} />
+          <StatBar label={t('hud.stamina')} value={player.stats.stamina / 100} color={PALETTE.ui.good} />
+          <StatBar label={t('hud.pack')} value={player.carriedWeightFraction()} color={PALETTE.ui.warn} />
         </div>
 
         <div className="panel resource-strip">
@@ -118,19 +128,19 @@ export function Hud({
 
         <div className="panel resource-strip" style={{ flexDirection: 'column', gap: 4 }}>
           <div className="kv">
-            <span>{TIER_LABELS[settlement.tier]}</span>
-            <span className="mono">{settlement.population} settlers</span>
+            <span>{tierName(settlement.tier)}</span>
+            <span className="mono">{t('hud.settlers', { count: settlement.population })}</span>
           </div>
           <div className="kv">
-            <span>Housing</span>
+            <span>{t('hud.housing')}</span>
             <span className="mono">
               {settlement.population - settlement.homeless}/{settlement.housingCapacity}
             </span>
           </div>
           <div className="kv">
-            <span>Food</span>
+            <span>{t('hud.food')}</span>
             <span className="mono" style={{ color: settlement.foodDays < 3 ? hexToCss(PALETTE.ui.bad) : undefined }}>
-              {settlement.foodDays > 90 ? '∞' : `${settlement.foodDays.toFixed(1)}d`}
+              {settlement.foodDays > 90 ? '∞' : t('hud.days', { value: settlement.foodDays.toFixed(1) })}
             </span>
           </div>
         </div>
@@ -161,20 +171,20 @@ export function Hud({
       {/* ------------------------------------------------------------ right */}
       <div className="hud-right">
         <div className="tool-buttons">
-          <ToolButton label="Build" hotkey="B" active={panel === 'build'} onClick={() => onOpenPanel('build')} />
-          <ToolButton label="Inventory" hotkey="Tab" active={panel === 'inventory'} onClick={() => onOpenPanel('inventory')} />
-          <ToolButton label="Settlement" hotkey="C" active={panel === 'settlement'} onClick={() => onOpenPanel('settlement')} />
-          <ToolButton label="Jobs" hotkey="J" active={panel === 'jobs'} onClick={() => onOpenPanel('jobs')} />
-          <ToolButton label="Production" hotkey="P" active={panel === 'production'} onClick={() => onOpenPanel('production')} />
-          <ToolButton label="Research" hotkey="T" active={panel === 'research'} onClick={() => onOpenPanel('research')} />
-          <ToolButton label="Map" hotkey="M" active={panel === 'map'} onClick={() => onOpenPanel('map')} />
-          <ToolButton label="Chronicle" hotkey="" active={panel === 'chronicle'} onClick={() => onOpenPanel('chronicle')} />
+          <ToolButton label={t('hud.build')} hotkey="B" active={panel === 'build'} onClick={() => onOpenPanel('build')} />
+          <ToolButton label={t('hud.inventory')} hotkey="Tab" active={panel === 'inventory'} onClick={() => onOpenPanel('inventory')} />
+          <ToolButton label={t('hud.settlement')} hotkey="C" active={panel === 'settlement'} onClick={() => onOpenPanel('settlement')} />
+          <ToolButton label={t('hud.jobs')} hotkey="J" active={panel === 'jobs'} onClick={() => onOpenPanel('jobs')} />
+          <ToolButton label={t('hud.production')} hotkey="P" active={panel === 'production'} onClick={() => onOpenPanel('production')} />
+          <ToolButton label={t('hud.research')} hotkey="T" active={panel === 'research'} onClick={() => onOpenPanel('research')} />
+          <ToolButton label={t('hud.map')} hotkey="M" active={panel === 'map'} onClick={() => onOpenPanel('map')} />
+          <ToolButton label={t('hud.chronicle')} hotkey="" active={panel === 'chronicle'} onClick={() => onOpenPanel('chronicle')} />
         </div>
         <div className="tiny muted mono" style={{ textAlign: 'right' }}>
-          {OVERLAY_LABELS[game.overlay]} · O
+          {t('overlay.' + game.overlay)} · O
         </div>
         <div className="tiny muted mono" style={{ textAlign: 'right' }}>
-          {hud.cameraMode} view · V
+          {t('hud.cameraMode', { mode: hud.cameraMode })} · V
         </div>
       </div>
 
@@ -184,7 +194,8 @@ export function Hud({
           <div className="interact-prompt" style={{ borderColor: placement.valid ? undefined : hexToCss(PALETTE.ui.bad) }}>
             {placement.valid ? (
               <>
-                <kbd>LMB</kbd> place · <kbd>R</kbd> rotate · <kbd>Esc</kbd> cancel
+                <kbd>LMB</kbd> {t('prompt.place')} · <kbd>R</kbd> {t('prompt.rotate')} ·{' '}
+                <kbd>Esc</kbd> {t('prompt.cancel')}
               </>
             ) : (
               <span style={{ color: hexToCss(PALETTE.ui.bad) }}>{placement.reason}</span>
@@ -239,10 +250,10 @@ export function Hud({
             <div>{hud.toast}</div>
           </div>
         )}
-        {toasts.map((t) => (
-          <div className={`toast ${t.category}`} key={t.id}>
-            <div className="when">{t.dateLabel}</div>
-            <div>{t.text}</div>
+        {toasts.map((ev) => (
+          <div className={`toast ${ev.category}`} key={ev.id}>
+            <div className="when">{eventDate(ev)}</div>
+            <div>{eventText(ev)}</div>
           </div>
         ))}
       </div>
@@ -283,53 +294,18 @@ function ToolButton({
   );
 }
 
-const TUTORIAL_STEPS = [
-  {
-    title: 'Look around',
-    body:
-      'WASD to walk, hold right mouse to turn the camera, Shift to run. Your settlers arrived with a few supplies dropped on the ground nearby.',
-  },
-  {
-    title: 'Mark out a shelter',
-    body:
-      'Press B and place a Tent or Stockpile. Placing a blueprint does not build it — it stakes out a site and asks the settlement for materials.',
-  },
-  {
-    title: 'Gather what it needs',
-    body:
-      'Walk up to a tree and hold F to fell it. Press E to pick up logs lying on the ground. Your loggers will do the same on their own.',
-  },
-  {
-    title: 'Get materials on site',
-    body:
-      'Haulers carry goods from stores to sites. You can help: stand at a site with materials in your pack and press E to hand them over.',
-  },
-  {
-    title: 'Watch it go up',
-    body:
-      'Builders work the site stage by stage: footings, frame, walls, roof. Press O to see construction progress above each site.',
-  },
-  {
-    title: 'It becomes a home',
-    body:
-      'Finished housing gets residents. Finished workshops get workers and start producing. Check the Settlement panel with C.',
-  },
-  {
-    title: 'Keep it running',
-    body:
-      'A settlement stalls when it runs out of hands, materials or storage. The warnings on the left tell you which. You are on your own from here.',
-  },
-];
+const TUTORIAL_STEP_COUNT = 7;
 
 function Tutorial({ step, onDismiss }: { step: number; onDismiss: () => void }): JSX.Element {
-  const s = TUTORIAL_STEPS[Math.min(step, TUTORIAL_STEPS.length - 1)];
+  const t = useT();
+  const i = Math.min(step, TUTORIAL_STEP_COUNT - 1);
   return (
     <div className="tutorial">
-      <h4>{s.title}</h4>
-      <p>{s.body}</p>
+      <h4>{t(`tut.${i}.title`)}</h4>
+      <p>{t(`tut.${i}.body`)}</p>
       <div className="steps">
-        {TUTORIAL_STEPS.map((_, i) => (
-          <i key={i} className={i < step ? 'done' : i === step ? 'current' : ''} />
+        {Array.from({ length: TUTORIAL_STEP_COUNT }, (_, k) => (
+          <i key={k} className={k < step ? 'done' : k === step ? 'current' : ''} />
         ))}
       </div>
       <button
@@ -337,13 +313,14 @@ function Tutorial({ step, onDismiss }: { step: number; onDismiss: () => void }):
         style={{ marginTop: 8, width: '100%', textAlign: 'center' }}
         onClick={onDismiss}
       >
-        Dismiss
+        {t('tut.dismiss')}
       </button>
     </div>
   );
 }
 
 function Inspector({ game }: { game: Game }): JSX.Element | null {
+  const t = useT();
   const sel = game.world.selection;
   if (!sel) return null;
   const world = game.world;
@@ -357,31 +334,31 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
       <div className="panel inspector">
         <h4>{npc.name}</h4>
         <div className="sub">
-          {PROFESSIONS[npc.profession].name} · {npc.age} years · {npc.moodLabel()}
+          {professionName(npc.profession)} · {t('insp.age', { age: npc.age })} · {moodName(npc.needs.mood)}
         </div>
         <div className="kv">
-          <span>Doing</span>
-          <span>{ACTIVITY_LABELS[npc.activity]}</span>
+          <span>{t('insp.doing')}</span>
+          <span>{activityName(npc.activity)}</span>
         </div>
         <div className="kv">
-          <span>Carrying</span>
+          <span>{t('insp.carrying')}</span>
           <span className="mono tiny">{npc.carryingSummary()}</span>
         </div>
         <div className="kv">
-          <span>Home</span>
-          <span>{home ? home.def.name : 'None'}</span>
+          <span>{t('insp.home')}</span>
+          <span>{home ? buildingName(home.defId) : t('insp.none')}</span>
         </div>
         <div className="kv">
-          <span>Works at</span>
-          <span>{work ? work.def.name : '—'}</span>
+          <span>{t('insp.worksAt')}</span>
+          <span>{work ? buildingName(work.defId) : '—'}</span>
         </div>
-        <div className="section-label">Needs</div>
-        <NeedBar label="Food" value={npc.needs.hunger / 100} />
-        <NeedBar label="Rest" value={npc.needs.rest / 100} />
-        <NeedBar label="Social" value={npc.needs.social / 100} />
-        <NeedBar label="Comfort" value={npc.needs.comfort / 100} />
+        <div className="section-label">{t('insp.needs')}</div>
+        <NeedBar label={t('need.food')} value={npc.needs.hunger / 100} />
+        <NeedBar label={t('need.rest')} value={npc.needs.rest / 100} />
+        <NeedBar label={t('need.social')} value={npc.needs.social / 100} />
+        <NeedBar label={t('need.comfort')} value={npc.needs.comfort / 100} />
         <button className="btn small ghost" style={{ marginTop: 10, width: '100%' }} onClick={() => (world.selection = null)}>
-          Close
+          {t('insp.close')}
         </button>
       </div>
     );
@@ -393,18 +370,18 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
     const materials = b.materialsDelivered();
     return (
       <div className="panel inspector">
-        <h4>{b.def.name}</h4>
+        <h4>{buildingName(b.defId)}</h4>
         <div className="sub">{b.statusText()}</div>
         {!b.complete && (
           <>
             <div className="kv">
-              <span>Stage</span>
+              <span>{t('insp.stage')}</span>
               <span>
                 {b.stageIndex + 1} of {b.def.stages.length}
               </span>
             </div>
             <div className="kv">
-              <span>Progress</span>
+              <span>{t('insp.progress')}</span>
               <span className="mono">{Math.round(b.progress * 100)}%</span>
             </div>
             <div className="progress-ring">
@@ -412,10 +389,10 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
             </div>
             {materials.length > 0 && (
               <>
-                <div className="section-label">Materials on site</div>
+                <div className="section-label">{t('insp.materialsOnSite')}</div>
                 {materials.map((m) => (
                   <div className="mat-row" key={m.item}>
-                    <span>{ITEMS[m.item].name}</span>
+                    <span>{itemName(m.item)}</span>
                     <span className={m.have >= m.need ? 'have' : 'short'}>
                       {m.have}/{m.need}
                     </span>
@@ -424,7 +401,7 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
               </>
             )}
             <div className="kv">
-              <span>Builders</span>
+              <span>{t('insp.builders')}</span>
               <span className="mono">
                 {world.jobs.all.filter((j) => j.kind === 'build' && j.buildingId === b.id && j.assignedTo !== 0).length}
               </span>
@@ -435,7 +412,7 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
           <>
             {b.def.workSlots > 0 && (
               <div className="kv">
-                <span>Workers</span>
+                <span>{t('insp.workers')}</span>
                 <span className="mono">
                   {b.workerIds.length}/{b.def.workSlots}
                 </span>
@@ -443,7 +420,7 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
             )}
             {(b.def.housing ?? 0) > 0 && (
               <div className="kv">
-                <span>Residents</span>
+                <span>{t('insp.residents')}</span>
                 <span className="mono">
                   {b.residentIds.length}/{b.def.housing}
                 </span>
@@ -452,29 +429,31 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
             {(b.def.storageSlots ?? 0) > 0 && (
               <>
                 <div className="kv">
-                  <span>Storage</span>
+                  <span>{t('insp.storage')}</span>
                   <span className="mono">
                     {b.inventory.usedSlots()}/{b.inventory.capacity}
                   </span>
                 </div>
-                <div className="section-label">Contents</div>
+                <div className="section-label">{t('insp.contents')}</div>
                 {b.inventory.summary().slice(0, 6).map((s) => (
                   <div className="mat-row" key={s.item}>
-                    <span>{ITEMS[s.item].name}</span>
+                    <span>{itemName(s.item)}</span>
                     <span className="mono">{s.count}</span>
                   </div>
                 ))}
-                {b.inventory.isEmpty() && <div className="tiny muted">Empty</div>}
+                {b.inventory.isEmpty() && <div className="tiny muted">{t('insp.empty')}</div>}
               </>
             )}
             <div className="kv">
-              <span>Condition</span>
+              <span>{t('insp.condition')}</span>
               <span className="mono">{Math.round(b.condition * 100)}%</span>
             </div>
             {b.builtBy.length > 0 && (
               <div className="tiny muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
-                Built by {b.builtBy.slice(0, 3).join(', ')}
-                {b.completedDay >= 0 && `, finished on day ${b.completedDay}`}.
+                {t('insp.builtBy', {
+                  names: b.builtBy.slice(0, 3).join(', '),
+                  day: b.completedDay,
+                })}
               </div>
             )}
           </>
@@ -487,7 +466,7 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
               b.paused = !b.paused;
             }}
           >
-            {b.paused ? 'Resume' : 'Pause'}
+            {b.paused ? t('insp.resume') : t('insp.pause')}
           </button>
           <button
             className="btn small danger ghost"
@@ -497,7 +476,7 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
               world.selection = null;
             }}
           >
-            {b.complete ? 'Demolish' : 'Cancel'}
+            {b.complete ? t('insp.demolish') : t('insp.cancel')}
           </button>
         </div>
       </div>
@@ -509,20 +488,20 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
     if (!n) return null;
     return (
       <div className="panel inspector">
-        <h4>{n.kind.replace(/_/g, ' ')}</h4>
-        <div className="sub">Resource</div>
+        <h4>{resourceName(n.kind)}</h4>
+        <div className="sub">{t('insp.resource')}</div>
         <div className="kv">
-          <span>Remaining</span>
+          <span>{t('insp.remaining')}</span>
           <span className="mono">
             {n.amount}/{n.maxAmount}
           </span>
         </div>
         <div className="kv">
-          <span>Maturity</span>
+          <span>{t('insp.maturity')}</span>
           <span className="mono">{Math.round(n.growth * 100)}%</span>
         </div>
         <button className="btn small ghost" style={{ marginTop: 10, width: '100%' }} onClick={() => (world.selection = null)}>
-          Close
+          {t('insp.close')}
         </button>
       </div>
     );
@@ -544,55 +523,56 @@ function NeedBar({ label, value }: { label: string; value: number }): JSX.Elemen
 }
 
 function DebugPanel({ game, hud }: { game: Game; hud: HudSnapshot }): JSX.Element {
+  const t = useT();
   const w = game.world;
   return (
     <div className="debug-panel">
       <div className="debug-row">
-        <span>FPS</span>
+        <span>{t('common.fps')}</span>
         <b>{hud.fps.toFixed(0)}</b>
       </div>
       <div className="debug-row">
-        <span>Draw calls</span>
+        <span>{t('common.drawCalls')}</span>
         <b>{hud.drawCalls}</b>
       </div>
       <div className="debug-row">
-        <span>Triangles</span>
+        <span>{t('common.triangles')}</span>
         <b>{compactNumber(hud.triangles)}</b>
       </div>
       <div className="debug-row">
-        <span>Settlers</span>
+        <span>{t('common.settlers')}</span>
         <b>{w.npcs.length}</b>
       </div>
       <div className="debug-row">
-        <span>Buildings</span>
+        <span>{t('common.buildings')}</span>
         <b>{w.buildings.length}</b>
       </div>
       <div className="debug-row">
-        <span>Resource nodes</span>
+        <span>{t('common.resourceNodes')}</span>
         <b>{w.nodes.length}</b>
       </div>
       <div className="debug-row">
-        <span>Ground piles</span>
+        <span>{t('common.groundPiles')}</span>
         <b>{w.piles.length}</b>
       </div>
       <div className="debug-row">
-        <span>Open jobs</span>
+        <span>{t('common.openJobs')}</span>
         <b>{w.jobs.openCount}/{w.jobs.all.length}</b>
       </div>
       <div className="debug-row">
-        <span>Wildlife</span>
+        <span>{t('common.wildlife')}</span>
         <b>{w.wildlife.length}</b>
       </div>
       <div className="debug-row">
-        <span>Paths queued</span>
+        <span>{t('common.pathsQueued')}</span>
         <b>{w.nav.stats.queued}</b>
       </div>
       <div className="debug-row">
-        <span>Particles</span>
+        <span>{t('common.particles')}</span>
         <b>{game.particles.activeCount}</b>
       </div>
       <div className="debug-row">
-        <span>Seed</span>
+        <span>{t('common.seed')}</span>
         <b>{w.config.seedText}</b>
       </div>
     </div>

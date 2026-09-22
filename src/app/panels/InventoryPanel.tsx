@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Game } from '../../game/Game';
 import { ITEMS } from '../../data/items';
 import { ItemIcon, Window } from '../components/common';
+import { useT } from '../../i18n';
+import { itemDescription, itemName } from '../../i18n/names';
 
 interface Props {
   game: Game;
@@ -9,6 +11,7 @@ interface Props {
 }
 
 export function InventoryPanel({ game, onClose }: Props): JSX.Element {
+  const t = useT();
   const inv = game.world.player.inventory;
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -27,13 +30,11 @@ export function InventoryPanel({ game, onClose }: Props): JSX.Element {
   const weight = inv.totalWeight();
 
   return (
-    <Window title="Pack" onClose={onClose} width="narrow">
+    <Window title={t('inv.title')} onClose={onClose} width="narrow">
       <div className="inv-meta">
-        <span>
-          {inv.usedSlots()} / {inv.capacity} slots
-        </span>
+        <span>{t('inv.slots', { used: inv.usedSlots(), total: inv.capacity })}</span>
         <span className="mono">
-          {weight.toFixed(0)} / {inv.weightLimit} kg
+          {t('inv.weight', { used: weight.toFixed(0), total: inv.weightLimit })}
         </span>
       </div>
 
@@ -57,7 +58,9 @@ export function InventoryPanel({ game, onClose }: Props): JSX.Element {
               setDragFrom(null);
               setDragOver(null);
             }}
-            title={slot ? `${ITEMS[slot.item].name} — ${ITEMS[slot.item].description}` : 'Empty'}
+            title={
+              slot ? `${itemName(slot.item)} \u2014 ${itemDescription(slot.item)}` : t('insp.empty')
+            }
           >
             {slot && (
               <>
@@ -69,22 +72,21 @@ export function InventoryPanel({ game, onClose }: Props): JSX.Element {
         ))}
       </div>
 
-      <div className="section-label">Carried</div>
+      <div className="section-label">{t('inv.carried')}</div>
       <div className="list">
         {inv.summary().map((s) => (
           <div className="list-row" key={s.item} style={{ gridTemplateColumns: '24px 1fr auto auto' }}>
             <ItemIcon item={s.item} size={18} />
-            <span>{ITEMS[s.item].name}</span>
+            <span>{itemName(s.item)}</span>
             <span className="mono muted tiny">{(ITEMS[s.item].weight * s.count).toFixed(0)} kg</span>
             <span className="mono">{s.count}</span>
           </div>
         ))}
-        {inv.isEmpty() && <div className="empty-note">Your pack is empty.</div>}
+        {inv.isEmpty() && <div className="empty-note">{t('inv.packEmpty')}</div>}
       </div>
 
       <div className="tiny muted" style={{ marginTop: 14, lineHeight: 1.6 }}>
-        Stand next to a stockpile or warehouse and press E to unload everything you are carrying.
-        Stand at a construction site and press E to hand over materials it is waiting for.
+        {t('inv.note')}
       </div>
     </Window>
   );

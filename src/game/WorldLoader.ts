@@ -3,7 +3,16 @@
  */
 
 import { Terrain, OVERLAY } from '../world/Terrain';
-import { TerrainData, WorldConfig, WORLD_SIZE_TILES, TILE_SIZE, ClimatePreset, WorldSizePreset, Difficulty } from '../world/types';
+import {
+  TerrainData,
+  WorldConfig,
+  WORLD_SIZE_TILES,
+  TILE_SIZE,
+  ClimatePreset,
+  WorldSizePreset,
+  Difficulty,
+  WorldEra,
+} from '../world/types';
 import type { WorldGenMessage, WorldGenPayload } from '../world/worldgenTypes';
 import { World } from '../sim/World';
 import { hashString } from '../core/rng';
@@ -21,6 +30,7 @@ export interface NewWorldOptions {
   resourceDensity: number;
   startingSettlers: number;
   difficulty: Difficulty;
+  era: WorldEra;
 }
 
 export function makeConfig(options: NewWorldOptions): WorldConfig {
@@ -36,6 +46,7 @@ export function makeConfig(options: NewWorldOptions): WorldConfig {
     resourceDensity: options.resourceDensity,
     startingSettlers: options.startingSettlers,
     difficulty: options.difficulty,
+    era: options.era,
   };
 }
 

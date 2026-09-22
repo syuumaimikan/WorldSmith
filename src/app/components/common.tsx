@@ -1,13 +1,16 @@
 import { ReactNode } from 'react';
 import { ItemId, ITEMS } from '../../data/items';
 import { hexToCss } from '../../render/Palette';
+import { useLocale } from '../../i18n';
+import { itemName } from '../../i18n/names';
 
 export function ItemIcon({ item, size = 26 }: { item: ItemId; size?: number }): JSX.Element {
   const def = ITEMS[item];
+  useLocale();
   return (
     <div
       className="item-icon"
-      title={def.name}
+      title={itemName(item)}
       style={{ width: size, height: size, background: hexToCss(def.color) }}
     />
   );
@@ -83,5 +86,5 @@ export function EmptyNote({ children }: { children: ReactNode }): JSX.Element {
 }
 
 export function itemLabel(item: ItemId): string {
-  return ITEMS[item].name;
+  return itemName(item);
 }

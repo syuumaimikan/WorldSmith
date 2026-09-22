@@ -22,11 +22,27 @@ ctx.onmessage = (ev: MessageEvent<WorldGenRequest>) => {
       const now = performance.now();
       if (!force && now - lastPost < 60) return;
       lastPost = now;
-      const msg: WorldGenMessage = { type: 'progress', stage, fraction };
+      const msg: WorldGenMessage = { type: 'progress', stage: STAGE_KEYS[stage] ?? stage, fraction };
       ctx.postMessage(msg);
     };
 
     // Stage weights so the progress bar advances at a believable rate.
+    // The generator names its stages in English; the loading screen wants a
+    // translation key, so the mapping lives here rather than in the UI.
+    const STAGE_KEYS: Record<string, string> = {
+      'Shaping the continent': 'gen.continent',
+      'Raising mountains': 'gen.mountains',
+      'Weathering the land': 'gen.weather',
+      'Carving rivers': 'gen.rivers',
+      'Measuring the climate': 'gen.climate',
+      'Classifying biomes': 'gen.biomes',
+      'Seeding mineral veins': 'gen.veins',
+      'Growing forests': 'gen.forests',
+      'Placing mineral deposits': 'gen.deposits',
+      'Remembering the past': 'gen.history',
+      'Waking the world': 'loading.waking',
+    };
+
     const STAGES: { name: string; weight: number }[] = [
       { name: 'Shaping the continent', weight: 0.08 },
       { name: 'Raising mountains', weight: 0.06 },

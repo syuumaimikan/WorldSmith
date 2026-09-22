@@ -211,6 +211,11 @@ export function professionDef(id: ProfessionId): ProfessionDef {
   return PROFESSIONS[id] ?? PROFESSIONS.settler;
 }
 
+/** Cloak colour for a trade — the settlement's colour code at a glance. */
+export function professionColour(id: ProfessionId): number {
+  return professionDef(id).cloak;
+}
+
 /**
  * Skill level 0..20. Returns a work-rate multiplier — an expert is roughly
  * twice as fast as a novice, which is enough to matter without making early

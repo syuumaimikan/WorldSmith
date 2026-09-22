@@ -1,10 +1,16 @@
 import { useState } from 'react';
 import { Game } from '../../game/Game';
 import { EmptyNote, Pill, Tabs, Window } from '../components/common';
-import { HaulJob, PRIORITY_LABELS } from '../../sim/Jobs';
-import { ITEMS } from '../../data/items';
-import { PROFESSIONS } from '../../data/professions';
-import { ACTIVITY_LABELS } from '../../sim/Npc';
+import { HaulJob } from '../../sim/Jobs';
+import { useT } from '../../i18n';
+import {
+  activityName,
+  buildingName,
+  itemName,
+  priorityName,
+  professionName,
+  stageName,
+} from '../../i18n/names';
 
 interface Props {
   game: Game;
@@ -14,6 +20,7 @@ interface Props {
 type Tab = 'queue' | 'sites' | 'workers';
 
 export function JobsPanel({ game, onClose }: Props): JSX.Element {
+  const t = useT();
   const world = game.world;
   const [tab, setTab] = useState<Tab>('queue');
   const [, refresh] = useState(0);
@@ -22,12 +29,12 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
   const sites = world.buildings.filter((b) => !b.complete);
 
   return (
-    <Window title="Work" onClose={onClose} width="wide">
+    <Window title={t('jobs.title')} onClose={onClose} width="wide">
       <Tabs<Tab>
         tabs={[
-          { id: 'queue', label: `Queue (${jobs.length})` },
-          { id: 'sites', label: `Sites (${sites.length})` },
-          { id: 'workers', label: `Workers (${world.npcs.length})` },
+          { id: 'queue', label: t('jobs.queue', { count: jobs.length }) },
+          { id: 'sites', label: t('jobs.sites', { count: sites.length }) },
+          { id: 'workers', label: t('jobs.workers', { count: world.npcs.length }) },
         ]}
         active={tab}
         onChange={setTab}
@@ -37,8 +44,7 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
         {tab === 'queue' && (
           <>
             <div className="tiny muted" style={{ marginBottom: 10, lineHeight: 1.6 }}>
-              Hauling and construction are shared work. Everything else is done by whoever is
-              assigned to that workplace.
+              {t('jobs.note')}
             </div>
             <div className="list">
               {jobs.map((j) => {
@@ -49,22 +55,33 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
                   const dest = world.buildingById.get(h.destId);
                   const source =
                     h.sourceType === 'pile'
-                      ? 'ground'
-                      : world.buildingById.get(h.sourceId)?.def.name ?? 'store';
-                  label = `Haul ${h.amount} ${ITEMS[h.item].name} — ${source} → ${dest?.def.name ?? '?'}`;
+                      ? t('jobs.ground')
+                      : (() => {
+                          const src = world.buildingById.get(h.sourceId);
+                          return src ? buildingName(src.defId) : t('jobs.store');
+                        })();
+                  label = t('jobs.haul', {
+                    count: h.amount,
+                    item: itemName(h.item),
+                    from: source,
+                    to: dest ? buildingName(dest.defId) : '?',
+                  });
                 } else if (j.kind === 'build') {
                   const b = world.buildingById.get(j.buildingId);
-                  label = `Build ${b?.def.name ?? '?'} — ${b?.currentStage?.name ?? ''}`;
+                  label = t('jobs.buildJob', {
+                    building: b ? buildingName(b.defId) : '?',
+                    stage: b?.currentStage ? stageName(b.currentStage.id, b.currentStage.name) : '',
+                  });
                 } else {
                   const b = world.buildingById.get(j.buildingId);
-                  label = `Demolish ${b?.def.name ?? '?'}`;
+                  label = t('jobs.demolishJob', { building: b ? buildingName(b.defId) : '?' });
                 }
                 return (
                   <div className="list-row" key={j.id} style={{ gridTemplateColumns: '1fr 120px 90px' }}>
                     <span>{label}</span>
-                    <span className="tiny muted">{assignee ? assignee.name : 'unassigned'}</span>
+                    <span className="tiny muted">{assignee ? assignee.name : t('jobs.unassigned')}</span>
                     <Pill tone={j.priority >= 3 ? 'bad' : j.priority === 2 ? 'warn' : undefined}>
-                      {PRIORITY_LABELS[j.priority]}
+                      {priorityName(j.priority)}
                     </Pill>
                   </div>
                 );
@@ -72,7 +89,7 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
             </div>
             {jobs.length === 0 && (
               <EmptyNote>
-                No shared work right now. Mark out a building, or drop goods that need collecting.
+                {t('jobs.none')}
               </EmptyNote>
             )}
           </>
@@ -97,18 +114,26 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
                       onClose();
                     }}
                   >
-                    <span>{b.def.name}</span>
+                    <span>{buildingName(b.defId)}</span>
                     <div>
-                      <div className="tiny">{b.currentStage?.name ?? 'Finishing'}</div>
+                      <div className="tiny">
+                        {b.currentStage ? stageName(b.currentStage.id, b.currentStage.name) : '\u2014'}
+                      </div>
                       <div className="tiny muted">
                         {missing.length > 0
-                          ? `Waiting on ${missing.map((m) => `${m.amount} ${ITEMS[m.item].name.toLowerCase()}`).join(', ')}`
-                          : `${builders} working`}
+                          ? t('jobs.waitingOn', {
+                              list: missing.map((m) => `${m.amount} ${itemName(m.item)}`).join(', '),
+                            })
+                          : t('jobs.working', { count: builders })}
                       </div>
                     </div>
                     <span className="mono tiny">{Math.round(b.progress * 100)}%</span>
                     <Pill tone={missing.length > 0 ? 'warn' : builders > 0 ? 'good' : undefined}>
-                      {missing.length > 0 ? 'materials' : builders > 0 ? 'building' : 'idle'}
+                      {missing.length > 0
+                        ? t('jobs.materials')
+                        : builders > 0
+                          ? t('jobs.building')
+                          : t('jobs.idle')}
                     </Pill>
                     <select
                       className="tiny"
@@ -126,9 +151,9 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
                         padding: '2px 4px',
                       }}
                     >
-                      {PRIORITY_LABELS.map((p, i) => (
-                        <option key={p} value={i}>
-                          {p}
+                      {[0, 1, 2, 3].map((i) => (
+                        <option key={i} value={i}>
+                          {priorityName(i)}
                         </option>
                       ))}
                     </select>
@@ -136,7 +161,7 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
                 );
               })}
             </div>
-            {sites.length === 0 && <EmptyNote>No construction sites. Press B to mark one out.</EmptyNote>}
+            {sites.length === 0 && <EmptyNote>{t('jobs.noSites')}</EmptyNote>}
           </>
         )}
 
@@ -155,9 +180,9 @@ export function JobsPanel({ game, onClose }: Props): JSX.Element {
                   }}
                 >
                   <span>{n.name}</span>
-                  <span className="tiny muted">{PROFESSIONS[n.profession].name}</span>
-                  <span className="tiny">{ACTIVITY_LABELS[n.activity]}</span>
-                  <span className="tiny muted">{wp ? wp.def.name : 'no workplace'}</span>
+                  <span className="tiny muted">{professionName(n.profession)}</span>
+                  <span className="tiny">{activityName(n.activity)}</span>
+                  <span className="tiny muted">{wp ? buildingName(wp.defId) : t('jobs.noWorkplace')}</span>
                 </div>
               );
             })}

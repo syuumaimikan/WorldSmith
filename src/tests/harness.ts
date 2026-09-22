@@ -30,6 +30,7 @@ export function makeTestConfig(overrides: Partial<WorldConfig> = {}): WorldConfi
     resourceDensity: 1,
     startingSettlers: 6,
     difficulty: 'normal',
+    era: 'fresh',
     ...overrides,
   };
 }

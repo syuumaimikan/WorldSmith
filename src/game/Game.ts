@@ -34,6 +34,8 @@ import { applyToolWork, findTarget, interact, InteractTarget } from './PlayerAct
 import { BuildingId } from '../data/buildings';
 import { Overlay, OverlayRenderer } from '../render/OverlayRenderer';
 import { AudioEngine } from '../audio/AudioEngine';
+import { t } from '../i18n';
+import type { WeatherKind } from '../sim/Weather';
 
 const SIM_TICK = 1 / 15;
 const MAX_TICKS_PER_FRAME = 10;
@@ -61,10 +63,14 @@ export const DEFAULT_SETTINGS: GameSettings = {
 export interface HudSnapshot {
   version: number;
   clock: string;
-  date: string;
+  /** Calendar parts rather than a formatted string: the HUD formats them in
+   *  the player's own language. */
+  year: number;
+  month: number;
+  dayOfMonth: number;
   season: Season;
   speed: GameSpeed;
-  weather: string;
+  weather: WeatherKind;
   temperature: number;
   target: InteractTarget;
   placement: PlacementState | null;
@@ -178,10 +184,12 @@ export class Game {
     this.hud = {
       version: 0,
       clock: '',
-      date: '',
+      year: snap.year,
+      month: snap.month,
+      dayOfMonth: snap.dayOfMonth,
       season,
       speed: world.time.speed,
-      weather: world.weather.label,
+      weather: world.weather.current,
       temperature: 0,
       target: this.currentTarget,
       placement: null,
@@ -320,10 +328,12 @@ export class Game {
       if (input.mouseReleased(0)) {
         const placed = this.build.commit();
         if (placed > 0) {
-          this.toast(placed === 1 ? 'Blueprint placed' : `${placed} sections marked out`);
+          this.toast(
+            placed === 1 ? t('build.blueprintPlaced') : t('build.sectionsPlaced', { count: placed }),
+          );
           this.audio.play('place');
         } else if (!this.build.validNow) {
-          this.toast(this.build.reasonNow || 'Cannot build here');
+          this.toast(this.build.reasonNow || t('build.cannotBuildHere'));
         }
       }
       if (input.wasPressed('cancel') || input.mousePressed(1)) {
@@ -614,7 +624,7 @@ export class Game {
     this.vegetation.setSeason(season, this.world.config.climate === 'cold');
     this.buildingRenderer.setSeason(season);
     this.build.setSeason(season);
-    this.world.log.add(this.world.time, 'settlement', `${capitalise(season)} arrives.`, { notable: true });
+    this.world.log.add(this.world.time, 'settlement', 'ev.seasonArrives', { season }, { notable: true });
   }
 
   private publishHud(): void {
@@ -622,10 +632,12 @@ export class Game {
     const h = this.hud;
     h.version = ++this.hudVersion;
     h.clock = `${String(snap.hour).padStart(2, '0')}:${String(snap.minute).padStart(2, '0')}`;
-    h.date = `${snap.dayOfMonth} ${MONTHS[snap.month]}, Yr ${snap.year}`;
+    h.year = snap.year;
+    h.month = snap.month;
+    h.dayOfMonth = snap.dayOfMonth;
     h.season = snap.season as Season;
     h.speed = this.world.time.speed;
-    h.weather = this.world.weather.label;
+    h.weather = this.world.weather.current;
     h.temperature =
       this.world.terrain.temperatureAt(this.world.player.position.x, this.world.player.position.z) +
       this.world.time.seasonalTemperatureOffset();
@@ -669,15 +681,8 @@ export class Game {
 }
 
 const ZERO = new Vector3();
-const MONTHS = [
-  'Thaw', 'Seed', 'Blossom', 'Longsun', 'Highsun', 'Goldfall',
-  'Harvest', 'Ember', 'Grey', 'Frost', 'Deepwinter', 'Still',
-];
 
 function snowCoverFor(season: Season): number {
   return season === 'winter' ? 1 : season === 'autumn' ? 0.3 : season === 'spring' ? 0.18 : 0.02;
 }
 
-function capitalise(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}

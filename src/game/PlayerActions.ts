@@ -13,6 +13,9 @@ import { ItemPile } from '../sim/ItemPile';
 import { Building } from '../sim/Building';
 import { Npc } from '../sim/Npc';
 import { ITEMS, ItemId } from '../data/items';
+import { t } from '../i18n';
+import { buildingName, itemName, resourceName, professionName } from '../i18n/names';
+import { buildingStatus } from '../i18n/status';
 
 export type TargetKind = 'node' | 'pile' | 'building' | 'npc' | 'none';
 
@@ -75,8 +78,8 @@ export function findTarget(world: World): InteractTarget {
       {
         kind: 'pile',
         id: pile.id,
-        label: `${pile.count} ${ITEMS[pile.item].name}`,
-        verb: 'Pick up',
+        label: `${pile.count} ${itemName(pile.item)}`,
+        verb: t('prompt.pickUp'),
         detail: '',
         distance: 0,
         progress: 0,
@@ -90,12 +93,17 @@ export function findTarget(world: World): InteractTarget {
   world.nodeGrid.forEachNear(ax, az, REACH + 1, (node) => {
     if (node.depleted) return;
     const def = RESOURCES[node.kind];
-    const verb = def.skill === 'chop' ? 'Chop' : def.skill === 'mine' ? 'Mine' : 'Gather';
+    const verb =
+      def.skill === 'chop'
+        ? t('prompt.chop')
+        : def.skill === 'mine'
+          ? t('prompt.mine')
+          : t('prompt.gather');
     consider(
       {
         kind: 'node',
         id: node.id,
-        label: def.name,
+        label: resourceName(node.kind),
         verb,
         detail: `${node.amount}/${node.maxAmount}`,
         distance: 0,
@@ -112,14 +120,18 @@ export function findTarget(world: World): InteractTarget {
     const dz = b.worldZ - p.position.z;
     const half = Math.max(b.footprintWidth, b.footprintDepth) * world.terrain.tileSize * 0.5;
     if (Math.hypot(dx, dz) > half + REACH) continue;
-    const verb = !b.complete ? 'Inspect site' : b.isStorage ? 'Store goods' : 'Inspect';
+    const verb = !b.complete
+      ? t('prompt.inspectSite')
+      : b.isStorage
+        ? t('prompt.storeGoods')
+        : t('prompt.inspect');
     consider(
       {
         kind: 'building',
         id: b.id,
-        label: b.def.name,
+        label: buildingName(b.defId),
         verb,
-        detail: b.statusText(),
+        detail: buildingStatus(b),
         distance: 0,
         progress: b.progress,
         building: b,
@@ -135,8 +147,8 @@ export function findTarget(world: World): InteractTarget {
         kind: 'npc',
         id: npc.id,
         label: npc.name,
-        verb: 'Talk',
-        detail: npc.profession,
+        verb: t('prompt.talk'),
+        detail: professionName(npc.profession),
         distance: 0,
         progress: 0,
         npc,
@@ -204,7 +216,7 @@ export function applyToolWork(world: World, node: ResourceNode, dt: number): Act
 
   return {
     kind: overflow ? 'full' : 'gathered',
-    message: overflow ? 'Your pack is full — the rest is on the ground.' : undefined,
+    message: overflow ? t('inv.packFullDropped') : undefined,
     x: node.x,
     y: node.y + 0.8,
     z: node.z,
@@ -221,7 +233,7 @@ export function interact(world: World, target: InteractTarget): ActionResult {
       const pile = target.pile!;
       const take = Math.min(pile.count, p.inventory.spaceFor(pile.item));
       if (take <= 0) {
-        return { kind: 'full', message: 'Your pack is full.' };
+        return { kind: 'full', message: t('inv.full') };
       }
       p.inventory.add(pile.item, take);
       pile.count -= take;
@@ -229,7 +241,7 @@ export function interact(world: World, target: InteractTarget): ActionResult {
       world.advanceTutorial(2);
       return {
         kind: 'picked_up',
-        message: `Picked up ${take} ${ITEMS[pile.item].name}`,
+        message: t('inv.pickedUp', { count: take, item: itemName(pile.item) }),
         x: pile.x,
         y: pile.y + 0.3,
         z: pile.z,
@@ -253,7 +265,7 @@ export function interact(world: World, target: InteractTarget): ActionResult {
           world.onGoodsDelivered(b, missing[0].item, delivered);
           return {
             kind: 'stored',
-            message: `Delivered ${delivered} to the ${b.def.name.toLowerCase()}`,
+            message: t('inv.delivered', { count: delivered, building: buildingName(b.defId) }),
             x: b.worldX,
             y: b.groundY + 1,
             z: b.worldZ,
@@ -272,7 +284,7 @@ export function interact(world: World, target: InteractTarget): ActionResult {
           world.advanceTutorial(3);
           return {
             kind: 'stored',
-            message: `Stored ${moved} items`,
+            message: t('inv.stored', { count: moved }),
             x: b.worldX,
             y: b.groundY + 1,
             z: b.worldZ,
@@ -303,42 +315,42 @@ export function interact(world: World, target: InteractTarget): ActionResult {
 export function greeting(npc: Npc, world: World): string {
   const lines: string[] = [];
   const hour = world.time.snapshot().hour;
-  const timeGreeting = hour < 11 ? 'Morning.' : hour < 18 ? 'Afternoon.' : 'Evening.';
+  lines.push(t(hour < 11 ? 'talk.morning' : hour < 18 ? 'talk.afternoon' : 'talk.evening'));
 
-  lines.push(timeGreeting);
-
-  if (npc.needs.hunger < 35) lines.push("I could do with something to eat.");
-  else if (npc.needs.rest < 30) lines.push("I'm about ready to turn in.");
-  else if (npc.needs.mood > 80) lines.push('Good day for it.');
+  if (npc.needs.hunger < 35) lines.push(t('talk.hungry'));
+  else if (npc.needs.rest < 30) lines.push(t('talk.tired'));
+  else if (npc.needs.mood > 80) lines.push(t('talk.content'));
 
   switch (npc.activity) {
     case 'hauling':
-      lines.push(`Carrying ${npc.carryingSummary().toLowerCase()} across.`);
+      lines.push(t('talk.hauling', { goods: npc.carryingSummary() }));
       break;
     case 'building': {
       const site = world.buildingById.get(npc.task.targetId);
-      if (site) lines.push(`We're on the ${site.def.name.toLowerCase()}. ${site.statusText().toLowerCase()}.`);
+      if (site) {
+        lines.push(t('talk.building', { name: buildingName(site.defId), status: buildingStatus(site) }));
+      }
       break;
     }
     case 'chopping':
-      lines.push("Taking timber from the stand over there.");
+      lines.push(t('talk.chopping'));
       break;
     case 'mining':
-      lines.push('Hard going today, but the stone is good.');
+      lines.push(t('talk.mining'));
       break;
     case 'farming':
     case 'planting':
-      lines.push('Crops are coming along.');
+      lines.push(t('talk.farming'));
       break;
     case 'idle':
-      lines.push("Nothing needs doing that I can see.");
+      lines.push(t('talk.idle'));
       break;
     default:
       break;
   }
 
-  if (world.settlement.foodDays < 3) lines.push("Food's getting thin, mind.");
-  if (world.settlement.homeless > 0 && !npc.homeId) lines.push("Still no roof of my own.");
+  if (world.settlement.foodDays < 3) lines.push(t('talk.foodShort'));
+  if (world.settlement.homeless > 0 && !npc.homeId) lines.push(t('talk.homeless'));
 
   return lines.join(' ');
 }

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Game } from '../../game/Game';
 import { EmptyNote, Tabs, Window } from '../components/common';
 import { EventCategory } from '../../sim/EventLog';
+import { useT } from '../../i18n';
+import { eventDate, eventText } from '../../i18n/events';
 
 interface Props {
   game: Game;
@@ -10,18 +12,20 @@ interface Props {
 
 type Filter = 'all' | EventCategory;
 
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: 'all', label: 'Everything' },
-  { id: 'construction', label: 'Building' },
-  { id: 'settlement', label: 'Settlement' },
-  { id: 'people', label: 'People' },
-  { id: 'weather', label: 'Weather' },
-  { id: 'discovery', label: 'Discovery' },
-  { id: 'history', label: 'Before' },
+const FILTER_IDS: { id: Filter; key: string }[] = [
+  { id: 'all', key: 'chron.everything' },
+  { id: 'construction', key: 'chron.building' },
+  { id: 'settlement', key: 'chron.settlement' },
+  { id: 'people', key: 'chron.people' },
+  { id: 'weather', key: 'chron.weather' },
+  { id: 'discovery', key: 'chron.discovery' },
+  { id: 'history', key: 'chron.before' },
 ];
 
 export function ChroniclePanel({ game, onClose }: Props): JSX.Element {
+  const t = useT();
   const [filter, setFilter] = useState<Filter>('all');
+  const FILTERS = FILTER_IDS.map((f) => ({ id: f.id, label: t(f.key) }));
   const world = game.world;
 
   const events = [...world.log.all()]
@@ -29,7 +33,7 @@ export function ChroniclePanel({ game, onClose }: Props): JSX.Element {
     .reverse();
 
   return (
-    <Window title={`Chronicle of ${world.config.name}`} onClose={onClose} width="normal">
+    <Window title={t('chron.title', { name: world.config.name })} onClose={onClose} width="normal">
       <Tabs<Filter> tabs={FILTERS} active={filter} onChange={setFilter} />
 
       <div className="list" style={{ paddingTop: 14 }}>
@@ -45,11 +49,11 @@ export function ChroniclePanel({ game, onClose }: Props): JSX.Element {
               }
             }}
           >
-            <span className="mono tiny muted">{e.dateLabel}</span>
-            <span>{e.text}</span>
+            <span className="mono tiny muted">{eventDate(e)}</span>
+            <span>{eventText(e)}</span>
           </div>
         ))}
-        {events.length === 0 && <EmptyNote>Nothing recorded yet.</EmptyNote>}
+        {events.length === 0 && <EmptyNote>{t('chron.nothing')}</EmptyNote>}
       </div>
     </Window>
   );

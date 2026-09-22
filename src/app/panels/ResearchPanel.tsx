@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Game } from '../../game/Game';
 import { Bar, EmptyNote, Pill, Window } from '../components/common';
 import { ALL_RESEARCH_IDS, RESEARCH, ResearchId } from '../../data/research';
+import { useT } from '../../i18n';
+import { researchDescription, researchName } from '../../i18n/names';
 
 interface Props {
   game: Game;
@@ -9,6 +11,7 @@ interface Props {
 }
 
 export function ResearchPanel({ game, onClose }: Props): JSX.Element {
+  const t = useT();
   const world = game.world;
   const research = world.research;
   const [, refresh] = useState(0);
@@ -25,18 +28,18 @@ export function ResearchPanel({ game, onClose }: Props): JSX.Element {
   }
 
   return (
-    <Window title="Research" onClose={onClose} width="wide">
+    <Window title={t('res.title')} onClose={onClose} width="wide">
       <div className="two-col" style={{ gap: 24, marginBottom: 14 }}>
         <div>
           <div className="section-label" style={{ marginTop: 0 }}>
-            Current project
+            {t('res.current')}
           </div>
           {research.activeNode ? (
             <>
-              <div style={{ marginBottom: 6 }}>{research.activeNode.name}</div>
+              <div style={{ marginBottom: 6 }}>{researchName(research.activeNode.id)}</div>
               <Bar value={research.activeProgress} />
               <div className="kv" style={{ marginTop: 6 }}>
-                <span>Progress</span>
+                <span>{t('insp.progress')}</span>
                 <span className="mono">
                   {Math.round(research.progress)} / {research.activeNode.cost}
                 </span>
@@ -49,31 +52,31 @@ export function ResearchPanel({ game, onClose }: Props): JSX.Element {
                   refresh((v) => v + 1);
                 }}
               >
-                Stop working on this
+                {t('res.stop')}
               </button>
             </>
           ) : (
-            <div className="tiny muted">Nothing is being researched. Pick something below.</div>
+            <div className="tiny muted">{t('res.nothingActive')}</div>
           )}
         </div>
         <div>
           <div className="section-label" style={{ marginTop: 0 }}>
-            Capacity
+            {t('res.capacity')}
           </div>
           <div className="kv">
-            <span>Studies built</span>
+            <span>{t('res.studies')}</span>
             <span className="mono">{studies}</span>
           </div>
           <div className="kv">
-            <span>Scholars</span>
+            <span>{t('res.scholars')}</span>
             <span className="mono">{scholars}</span>
           </div>
           <div className="tiny muted" style={{ marginTop: 8, lineHeight: 1.6 }}>
             {studies === 0
-              ? 'Research needs somewhere to happen. Build a Study.'
+              ? t('res.needStudy')
               : scholars === 0
-                ? 'Nobody is working in the study. Assign someone as a Scholar from the Settlement panel.'
-                : 'Progress accrues only while a scholar is actually at work in a study.'}
+                ? t('res.needScholar')
+                : t('res.accrues')}
           </div>
         </div>
       </div>
@@ -82,7 +85,7 @@ export function ResearchPanel({ game, onClose }: Props): JSX.Element {
         .sort((a, b) => a - b)
         .map((tier) => (
           <div key={tier}>
-            <div className="section-label">Tier {tier + 1}</div>
+            <div className="section-label">{t('res.tier', { n: tier + 1 })}</div>
             <div className="build-list">
               {tiers.get(tier)!.map((id) => {
                 const node = RESEARCH[id];
@@ -99,19 +102,19 @@ export function ResearchPanel({ game, onClose }: Props): JSX.Element {
                         refresh((v) => v + 1);
                       }
                     }}
-                    title={node.description}
+                    title={researchDescription(node.id)}
                   >
                     <div className="name">
-                      {node.name} {done && <Pill tone="good">known</Pill>}
-                      {active && <Pill tone="warn">active</Pill>}
+                      {researchName(node.id)} {done && <Pill tone="good">{t('res.known')}</Pill>}
+                      {active && <Pill tone="warn">{t('res.active')}</Pill>}
                     </div>
-                    <div className="foot">{done ? '—' : `${node.cost} pts`}</div>
+                    <div className="foot">{done ? '\u2014' : t('res.points', { cost: node.cost })}</div>
                     <div className="tiny muted" style={{ marginTop: 5, lineHeight: 1.45 }}>
                       {node.unlocksText.join(' · ')}
                     </div>
                     {!done && node.requires.length > 0 && (
                       <div className="tiny muted" style={{ marginTop: 4 }}>
-                        needs {node.requires.map((r) => RESEARCH[r].name).join(', ')}
+                        {t('res.needs', { list: node.requires.map(researchName).join(', ') })}
                       </div>
                     )}
                   </button>
@@ -121,7 +124,7 @@ export function ResearchPanel({ game, onClose }: Props): JSX.Element {
           </div>
         ))}
 
-      {ALL_RESEARCH_IDS.length === 0 && <EmptyNote>Nothing to research.</EmptyNote>}
+      {ALL_RESEARCH_IDS.length === 0 && <EmptyNote>{t('common.none')}</EmptyNote>}
     </Window>
   );
 }
