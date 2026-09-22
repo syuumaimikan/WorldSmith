@@ -396,6 +396,8 @@ export class TerrainRenderer {
     const positions = new Float32Array(side * side * 3);
     const depths = new Float32Array(side * side);
     const flows = new Float32Array(side * side);
+    const levels = new Float32Array(side * side);
+    const grounds = new Float32Array(side * side);
     const wetVertex = new Uint8Array(side * side);
 
     for (let vz = 0; vz < side; vz++) {
@@ -418,16 +420,47 @@ export class TerrainRenderer {
             }
           }
         }
-        const ground = groundAt(tx, tz);
-        const level = wet > 0 ? sum / wet : ground;
+        grounds[vi] = groundAt(tx, tz);
         wetVertex[vi] = wet > 0 ? 1 : 0;
-
-        positions[vi * 3] = tx * ts;
-        positions[vi * 3 + 1] = level;
-        positions[vi * 3 + 2] = tz * ts;
-        depths[vi] = Math.max(0, level - ground);
+        levels[vi] = wet > 0 ? sum / wet : Number.NaN;
         flows[vi] = clamp01((flowAt(tx, tz) - 0.35) * 2.2);
       }
+    }
+
+    // A dry point on the edge of a sheet takes its height from the water
+    // beside it, not from the ground beneath it. Giving it the ground height
+    // is what hung those curtains down the mountainsides: a quad with one
+    // corner in a river and three on the slope below became a wall of water
+    // from the river down to the valley floor. A surface of water is level,
+    // and the shader throws away the part of it that is over dry land.
+    for (let vz = 0; vz < side; vz++) {
+      for (let vx = 0; vx < side; vx++) {
+        const vi = vz * side + vx;
+        if (wetVertex[vi]) continue;
+        let sum = 0;
+        let found = 0;
+        for (let oz = -1; oz <= 1; oz++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            const nx = vx + ox;
+            const nz = vz + oz;
+            if (nx < 0 || nz < 0 || nx >= side || nz >= side) continue;
+            const ni = nz * side + nx;
+            if (!wetVertex[ni]) continue;
+            sum += levels[ni];
+            found++;
+          }
+        }
+        levels[vi] = found > 0 ? sum / found : grounds[vi];
+      }
+    }
+
+    for (let vi = 0; vi < side * side; vi++) {
+      const vx = vi % side;
+      const vz = Math.floor(vi / side);
+      positions[vi * 3] = (baseX + vx * step) * ts;
+      positions[vi * 3 + 1] = levels[vi];
+      positions[vi * 3 + 2] = (baseZ + vz * step) * ts;
+      depths[vi] = Math.max(0, levels[vi] - grounds[vi]);
     }
 
     // A quad is kept only if some corner of it holds real water. A corner
@@ -445,6 +478,12 @@ export class TerrainRenderer {
         const dIdx = cIdx + 1;
         const deepest = Math.max(depths[a], depths[b], depths[cIdx], depths[dIdx]);
         if (deepest < 0.06) continue;
+        // Two bodies of water at very different heights are two bodies of
+        // water. Bridging them with one quad draws a wall between a tarn and
+        // the sea below it.
+        const hi = Math.max(levels[a], levels[b], levels[cIdx], levels[dIdx]);
+        const lo = Math.min(levels[a], levels[b], levels[cIdx], levels[dIdx]);
+        if (hi - lo > 2.5) continue;
         indices.push(a, cIdx, dIdx, a, dIdx, b);
       }
     }

@@ -244,28 +244,31 @@ export function Hud({
         </div>
       </div>
 
-      {/* --------------------------------------------------------- selection */}
-      {selection && <Inspector game={game} />}
+      {/* ----------------------------------------- the bottom-right corner */}
+      {/* One column. Both of these used to be pinned to the same corner with
+          the same offsets, so whatever was selected sat underneath whatever
+          had just happened. */}
+      <div className="hud-corner">
+        {selection && <Inspector game={game} />}
+        <div className="toast-stack">
+          {hud.toast && (
+            <div className="toast">
+              <div>{hud.toast}</div>
+            </div>
+          )}
+          {toasts.map((ev) => (
+            <div className={`toast ${ev.category}`} key={ev.id}>
+              <div className="when">{eventDate(ev)}</div>
+              <div>{eventText(ev)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* ---------------------------------------------------------- tutorial */}
       {game.settings.showTutorial && !tutorialDismissed && world.tutorialStep < 7 && (
         <Tutorial step={world.tutorialStep} onDismiss={onDismissTutorial} />
       )}
-
-      {/* ------------------------------------------------------------ toasts */}
-      <div className="toast-stack">
-        {hud.toast && (
-          <div className="toast">
-            <div>{hud.toast}</div>
-          </div>
-        )}
-        {toasts.map((ev) => (
-          <div className={`toast ${ev.category}`} key={ev.id}>
-            <div className="when">{eventDate(ev)}</div>
-            <div>{eventText(ev)}</div>
-          </div>
-        ))}
-      </div>
 
       {/* ------------------------------------------------------------- debug */}
       {showDebug && <DebugPanel game={game} hud={hud} />}

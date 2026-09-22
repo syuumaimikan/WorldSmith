@@ -49,6 +49,7 @@ import { DiplomacySystem } from './Diplomacy';
 import { CultureSystem } from './Culture';
 import { Chronicle } from './History';
 import { Generations, WORKING_AGE } from './Generations';
+import { Development } from './Development';
 import { TechnologySystem } from './Technology';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
@@ -129,6 +130,7 @@ export class World {
   readonly history = new Chronicle();
   readonly technology = new TechnologySystem();
   readonly generations: Generations;
+  readonly development: Development;
   readonly disease: DiseaseSystem;
   /**
    * How hard the settlement is rationing, 0 when there is plenty. A famine is
@@ -202,6 +204,7 @@ export class World {
     this.diplomacy = new DiplomacySystem(config.seed);
     this.culture = new CultureSystem(config.seed, this.namer);
     this.generations = new Generations(config.seed);
+    this.development = new Development(config.seed);
     this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
@@ -238,8 +241,9 @@ export class World {
     this.generations.update(this, hours);
     this.history.update(this, hours);
 
-    // The settlement: what a day of work and a day of eating come to.
+    // The settlement: a day of work, and a day of eating.
     this.recomputeSettlement();
+    this.development.update(this, 1);
     this.liveOffTheLand();
   }
 
@@ -260,26 +264,39 @@ export class World {
     let eaten = 0;
     for (const npc of this.npcs) eaten += npc.age < 14 ? 0.55 : 1;
 
-    // What the settlement's own stores and fields come to in a day. This is
-    // the same food figure the played game keeps, spread over the day.
-    const stored = s.foodDays * Math.max(1, mouths);
+    // What the fields and the hunters brought in today, plus whatever was
+    // put by. Nothing is assumed: the stores are searched and what is not
+    // there is not eaten.
     const grown = this.foodGrownPerDay();
-    const produced = grown + Math.min(stored, eaten);
+    const fromStores = this.consumeStoredFood(Math.max(0, eaten - grown));
+    const produced = grown + fromStores;
     const surplus = produced - eaten;
 
-    // What was eaten comes out of the stores, wherever it was kept.
-    this.consumeStoredFood(Math.min(stored, eaten));
+    // A quarter short is not three-quarters fed. Rationing bites: everyone
+    // gets a little less than enough and it tells on all of them, which is
+    // what stops a settlement growing for ever on land that cannot feed it.
+    const ratio = produced / Math.max(1, eaten);
+    const fed = surplus >= 0 ? 1 : clamp01((ratio - 0.72) * 3.6);
 
     for (const npc of this.npcs) {
-      // Hunger and rest settle towards what the day actually provided.
-      const fed = surplus >= 0 ? 1 : clamp01(produced / Math.max(1, eaten));
       npc.needs.hunger = clamp(npc.needs.hunger + (fed * 100 - npc.needs.hunger) * 0.25, 0, 100);
-      npc.needs.rest = clamp(npc.needs.rest + (s.housingCapacity >= mouths ? 6 : -2), 0, 100);
+      if (npc.age < 14) npc.needs.hunger = Math.min(100, npc.needs.hunger + 4);
+      const roofed = s.housingCapacity >= mouths;
+      npc.needs.rest = clamp(npc.needs.rest + (roofed ? 6 : -2), 0, 100);
+      // Sleeping out is not free, and it is far worse in winter than in
+      // summer. Only the share of people who have no bed pay for it.
+      const shortfall = clamp01((mouths - s.housingCapacity) / Math.max(1, mouths));
+      const winter = this.time.snapshot().season === 'winter';
+      const exposure = shortfall * (winter ? 1.4 : 0.35);
       npc.needs.health = clamp(
-        npc.needs.health + (npc.needs.hunger > 40 ? 1.2 : -3) - npc.frailty * 0.9,
+        npc.needs.health + (npc.needs.hunger > 40 ? 1.2 : -3) - npc.frailty * 0.9 - exposure,
         0,
         100,
       );
+      if (npc.needs.health <= 0) {
+        this.killNpc(npc, 'ev.diedOfIllness', { name: npc.name, illness: 'ev.exposure' });
+        continue;
+      }
       npc.updateMood();
       if (npc.needs.hunger <= 0 && npc.needs.health <= 2) {
         this.killNpc(npc, 'ev.diedOfHunger', { name: npc.name });
@@ -314,18 +331,6 @@ export class World {
       adults.filter((n) => n.profession === 'farmer').length + adults.length * 0.25;
     const farmed = Math.min(fields * 0.03, farmers * 1.8) * growing;
 
-    // What the country around the settlement gives up to people walking over
-    // it. Counted from the food that is actually growing there, so a
-    // settlement that has stripped its bushes goes hungry.
-    let forage = 0;
-    this.nodeGrid.forEachNear(s.centre.x, s.centre.z, s.radius + 70, (n) => {
-      if (n.depleted) return;
-      for (const y of RESOURCES[n.kind].yields) {
-        if (isFood(y.item)) forage += y.amount * 0.02 * n.growth;
-      }
-    });
-    const gathered = Math.min(forage * growing, adults.length * 0.75);
-
     // And what the hunters bring back, out of the animals that are there.
     let game = 0;
     for (const a of this.wildlife) {
@@ -336,11 +341,19 @@ export class World {
       adults.length * 0.15;
     const hunted = Math.min(game * 0.035, hunters * 1.3);
 
-    return farmed + gathered + hunted;
+    // Foraged food is not counted here. It is fetched in bushel by bushel by
+    // the same pass that fetches timber, out of the same bushes, and eaten
+    // out of the stores it is put in -- counting it twice was what let a
+    // settlement of three hundred feed itself off a hedge.
+    return farmed + hunted;
   }
 
-  /** Takes `amount` of food out of wherever the settlement keeps it. */
-  private consumeStoredFood(amount: number): void {
+  /**
+   * Takes `amount` of food out of wherever the settlement keeps it, and
+   * returns how much it actually found. A camp with no granary keeps its
+   * food in baskets on the ground, and that counts.
+   */
+  private consumeStoredFood(amount: number): number {
     let left = amount;
     for (const b of this.buildings) {
       if (left <= 0) break;
@@ -353,6 +366,15 @@ export class World {
         left -= take;
       }
     }
+    for (let i = this.piles.length - 1; i >= 0 && left > 0; i--) {
+      const pile = this.piles[i];
+      if (!isFood(pile.item)) continue;
+      const take = Math.min(pile.count, Math.ceil(left));
+      pile.count -= take;
+      left -= take;
+      if (pile.count <= 0) this.removePile(pile);
+    }
+    return amount - left;
   }
 
   /** Called once after a fresh world is generated. */
@@ -1650,6 +1672,16 @@ export class World {
       for (const s of b.inventory.slots) {
         if (s && isFood(s.item)) food += s.count;
       }
+    }
+    // A camp with no granary keeps its food in baskets on the ground, and
+    // that is still food. Counting only what is in a building told a
+    // settlement with a week of berries at its feet that it was starving.
+    const c = this.settlement.centre;
+    const reach = (this.settlement.radius + 40) ** 2;
+    for (const p of this.piles) {
+      if (!isFood(p.item)) continue;
+      if ((p.x - c.x) ** 2 + (p.z - c.z) ** 2 > reach) continue;
+      food += p.count;
     }
     this.settlement.recompute(this.buildings, this.npcs, food, roadTiles);
 

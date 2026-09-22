@@ -637,15 +637,35 @@ button {
 
 /* ----------------------------------------------------------------- toasts */
 
-.toast-stack {
+/*
+ * The bottom-right corner. What is selected sits above what has just
+ * happened, and the whole column is capped so a busy minute cannot push the
+ * selection off the top of the screen.
+ */
+.hud-corner {
   position: absolute;
   right: 14px;
   bottom: 14px;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-height: calc(100vh - 150px);
+  max-width: 340px;
+  pointer-events: none;
+}
+
+.hud-corner > * {
+  pointer-events: auto;
+}
+
+.toast-stack {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   align-items: flex-end;
   max-width: 340px;
+  overflow: hidden;
 }
 
 .toast {
@@ -1159,11 +1179,10 @@ button {
 /* ------------------------------------------------------------- selection */
 
 .inspector {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
   width: 300px;
   padding: 12px 14px;
+  max-height: 46vh;
+  overflow-y: auto;
 }
 
 .inspector h4 {

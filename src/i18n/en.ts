@@ -746,6 +746,7 @@ export const en: Record<string, string> = {
   'ev.outbreak': 'People are falling ill. They are calling it the {name}.',
   'ev.outbreakEnds': 'The {name} has passed. {deaths} dead, {recovered} recovered.',
   'ev.diedOfIllness': '{name} has died of the {illness}.',
+  'ev.exposure': 'the cold',
   'ev.diedOfHunger': '{name} has starved.',
   'ev.born': '{name} is born to {parent}.',
   'ev.diedOfAge': '{name} has died, at {age}.',

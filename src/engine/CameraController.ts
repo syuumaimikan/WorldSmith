@@ -136,9 +136,13 @@ export class CameraController {
 
   zoom(steps: number): void {
     if (this.mode === 'god') {
-      // The wheel changes altitude directly rather than an orbit distance.
+      // The wheel changes altitude directly rather than an orbit distance --
+      // but in the same direction as everywhere else. Climbing in god mode
+      // has to mean the same wheel turn as backing away in third person, or
+      // the wheel does opposite things depending on what the player is
+      // looking through.
       const alt = this.godAltitude();
-      this.godPosition.y -= steps * Math.max(4, alt * 0.22);
+      this.godPosition.y += steps * Math.max(4, alt * 0.22);
       return;
     }
     const min = this.mode === 'build' ? 8 : this.mode === 'overview' ? 30 : 2.2;

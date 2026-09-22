@@ -116,7 +116,9 @@ export class Generations {
     // place that eats what it gathers the same day it gathers it is fed.
     const hunger =
       world.npcs.reduce((sum, n) => sum + n.needs.hunger, 0) / Math.max(1, world.npcs.length);
-    const fed = clamp01((hunger - 35) / 45);
+    // Hungry people do not have many children. Being not quite starving is
+    // not the same as being fed.
+    const fed = clamp01((hunger - 52) / 38);
     if (fed <= 0.02) return;
     // Then room. A camp with no roof at all still has children -- people have
     // always had children in worse -- but fewer of them, and crowding slows

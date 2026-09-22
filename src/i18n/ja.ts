@@ -746,6 +746,7 @@ export const ja: Record<string, string> = {
   'ev.outbreak': '人々が病に倒れ始めた。{name}と呼ばれている。',
   'ev.outbreakEnds': '{name}は去った。死者{deaths}人、回復{recovered}人。',
   'ev.diedOfIllness': '{name}が{illness}で亡くなった。',
+  'ev.exposure': '寒さ',
   'ev.diedOfHunger': '{name}が餓死した。',
   'ev.born': '{parent}に{name}が生まれた。',
   'ev.diedOfAge': '{name}が{age}歳で世を去った。',
