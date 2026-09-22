@@ -22,6 +22,7 @@ import { PileRenderer } from '../render/PileRenderer';
 import { NpcRenderer } from '../render/NpcRenderer';
 import { WildlifeRenderer } from '../render/WildlifeRenderer';
 import { ParticleSystem } from '../render/Particles';
+import { SkyfallRenderer } from '../render/SkyfallRenderer';
 import { CharacterRig } from '../render/CharacterRig';
 import { characterMaterial, lookFor } from '../render/geometry/character';
 import { PALETTE } from '../render/Palette';
@@ -104,6 +105,7 @@ export class Game {
   readonly npcRenderer: NpcRenderer;
   readonly wildlifeRenderer: WildlifeRenderer;
   readonly particles: ParticleSystem;
+  readonly skyfall: SkyfallRenderer;
   readonly overlays: OverlayRenderer;
   readonly build: BuildController;
   readonly audio: AudioEngine;
@@ -176,6 +178,7 @@ export class Game {
     this.npcRenderer = new NpcRenderer(this.scene);
     this.wildlifeRenderer = new WildlifeRenderer(this.scene);
     this.particles = new ParticleSystem(this.scene);
+    this.skyfall = new SkyfallRenderer(this.scene);
     this.overlays = new OverlayRenderer(this.scene, world);
     this.build = new BuildController(this.scene, world, season);
     this.audio = new AudioEngine(settings.masterVolume);
@@ -760,6 +763,7 @@ export class Game {
     this.god.tick(dt);
     this.emitFireEffects(dt);
     this.particles.update(dt);
+    this.skyfall.update(this.world.disasters.falling, this.particles, dt);
     this.audio.update(world, this.sky.daylight, dt);
 
     if (this.toastTimer > 0) {

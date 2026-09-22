@@ -165,10 +165,13 @@ describe('volcanoes', () => {
   it('moves through pressure, unrest and eruption rather than firing instantly', () => {
     const world = buildTestWorld();
     const { x, z } = dryLandNear(world);
+    // A world comes with its own volcanoes, standing where the plates put
+    // them, so this is the one that was just raised rather than the only one.
+    const before = world.volcanoes.length;
     world.raiseVolcano(x, z, 60, 0.8);
-    expect(world.volcanoes.length).toBe(1);
+    expect(world.volcanoes.length).toBe(before + 1);
 
-    const v = world.volcanoes[0];
+    const v = world.volcanoes[world.volcanoes.length - 1];
     expect(v.state).not.toBe('erupting');
 
     const pressureBefore = v.pressure;
@@ -180,7 +183,7 @@ describe('volcanoes', () => {
     const world = buildTestWorld();
     const { x, z } = dryLandNear(world);
     world.raiseVolcano(x, z, 60, 0.9);
-    const v = world.volcanoes[0];
+    const v = world.volcanoes[world.volcanoes.length - 1];
 
     const heightBefore = world.terrain.heightAt(v.x, v.z);
     beginEruption(world, v);

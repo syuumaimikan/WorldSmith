@@ -57,6 +57,56 @@ export interface FloodCell {
   previousWater: number;
 }
 
+
+/**
+ * Something on its way down.
+ *
+ * A meteor that simply appears in a crater is a crater. The thing people
+ * actually remember is the minute beforehand: a light in the sky that gets
+ * brighter, and then the ground moves. So the rock is a real object with a
+ * position and a course, it burns its way down over several seconds, and
+ * anybody outside can watch it come.
+ */
+export interface FallingBody {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  /** Metres per simulated second. */
+  vx: number;
+  vy: number;
+  vz: number;
+  /** 0..1, the same figure the impact is scaled by. */
+  size: number;
+  targetX: number;
+  targetZ: number;
+  /** Simulated seconds of flight left. */
+  left: number;
+  /** Total flight time, for anything that wants to know how close it is. */
+  flight: number;
+}
+
+/**
+ * A wave on its way in.
+ *
+ * The sea floor moves, the water above it moves with it, and some minutes
+ * later that displacement arrives somewhere as a wall of water. The delay is
+ * the whole character of the thing: the shaking stops, people go to look at
+ * the harbour, and the sea has gone out.
+ */
+export interface Tsunami {
+  id: number;
+  /** Where the sea bed moved. */
+  x: number;
+  z: number;
+  /** 0..1. */
+  strength: number;
+  /** Simulated seconds until it arrives. */
+  arriveIn: number;
+  /** Whether the drawback has been announced yet. */
+  warned: boolean;
+}
+
 const MAX_FIRES = 220;
 const FIRE_SPREAD_RADIUS = 5.5;
 
@@ -132,6 +182,9 @@ export function windResistance(b: Building): number {
 export class DisasterManager {
   readonly fires: Fire[] = [];
   private floods: FloodCell[] = [];
+  readonly falling: FallingBody[] = [];
+  readonly waves: Tsunami[] = [];
+  private nextBodyId = 1;
   private rng: Rng;
   private nextFireId = 1;
   /** Set for one tick when a fire starts, so audio and toasts can react. */
@@ -211,6 +264,165 @@ export class DisasterManager {
       { damaged, destroyed },
       { notable: true, x, z },
     );
+
+    // And if the sea floor was part of what moved, the sea moved with it.
+    this.maybeTsunami(world, x, z, mag);
+  }
+
+  // =======================================================================
+  // The sea
+  // =======================================================================
+
+  /**
+   * Whether that earthquake moved enough sea floor to raise a wave.
+   *
+   * Only a big shock does it, and only one whose epicentre is at or under
+   * water -- a quake inland moves rock, not ocean. The wave is then launched
+   * from the water and given a few minutes to cross it.
+   */
+  maybeTsunami(world: World, x: number, z: number, magnitude: number): void {
+    if (magnitude < 0.45) return;
+    const source = this.nearestOpenWater(world, x, z, 260);
+    if (!source) return;
+
+    // How far the wave has to come decides how long the harbour has.
+    const travel = Math.hypot(source.x - x, source.z - z);
+    this.waves.push({
+      id: this.nextBodyId++,
+      x: source.x,
+      z: source.z,
+      strength: clamp01((magnitude - 0.4) * 1.8),
+      arriveIn: 55 + travel * 0.5,
+      warned: false,
+    });
+  }
+
+  updateWaves(world: World, dt: number): void {
+    if (this.waves.length === 0) return;
+    for (let i = this.waves.length - 1; i >= 0; i--) {
+      const w = this.waves[i];
+      w.arriveIn -= dt;
+
+      // The sea goes out first. It is the only warning there is, and it is
+      // worth giving the player, because it is the one real people get.
+      if (!w.warned && w.arriveIn < 30) {
+        w.warned = true;
+        world.log.add(world.time, 'disaster', 'ev.seaDrawsBack', undefined, {
+          notable: true,
+          x: w.x,
+          z: w.z,
+        });
+      }
+      if (w.arriveIn > 0) continue;
+
+      this.waves.splice(i, 1);
+      this.breakWave(world, w);
+    }
+  }
+
+  /** The wave arrives, and goes as far up the land as it has force to. */
+  private breakWave(world: World, wave: Tsunami): void {
+    const t = world.terrain;
+    const ts = t.tileSize;
+    // Run height: how far up the beach the water gets. A big wave on a flat
+    // shore goes a very long way; the same wave against a cliff does not.
+    const runUp = 2.5 + wave.strength * 9;
+    const reach = 120 + wave.strength * 420;
+    const r = Math.ceil(reach / ts);
+    const cx = t.tileX(wave.x);
+    const cz = t.tileZ(wave.z);
+    let drowned = 0;
+
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const tx = cx + dx;
+        const tz = cz + dz;
+        if (!t.inBounds(tx, tz)) continue;
+        const dist = Math.hypot(dx, dz) * ts;
+        if (dist > reach) continue;
+        const i = t.index(tx, tz);
+        const ground = t.data.height[i];
+        if (ground <= 0) continue;
+        // The wave loses height as it travels and as it climbs.
+        const height = runUp * (1 - dist / reach);
+        if (ground >= height) continue;
+        if (this.floods.some((c) => c.index === i)) continue;
+
+        this.floods.push({
+          index: i,
+          level: height,
+          remaining: 90 + wave.strength * 220,
+          previousWater: t.waterHeight[i],
+        });
+        t.waterHeight[i] = height;
+        t.markTileDirty(tx, tz);
+        drowned++;
+      }
+    }
+
+    // What the water takes with it.
+    let lost = 0;
+    for (const b of [...world.buildings]) {
+      const i = t.index(t.tileX(b.worldX), t.tileZ(b.worldZ));
+      if (!this.floods.some((c) => c.index === i)) continue;
+      // Anything standing in it is hit by the whole weight of it.
+      if (world.damageBuilding(b, 0.8 + wave.strength * 1.4)) lost++;
+    }
+    for (const npc of world.npcs) {
+      const i = t.index(t.tileX(npc.x), t.tileZ(npc.z));
+      if (!this.floods.some((c) => c.index === i)) continue;
+      npc.needs.health = Math.max(0, npc.needs.health - (25 + wave.strength * 55));
+      world.startleNpc(npc, wave.x, wave.z);
+    }
+    for (const node of [...world.nodes]) {
+      if (Math.hypot(node.x - wave.x, node.z - wave.z) > reach) continue;
+      const i = t.index(t.tileX(node.x), t.tileZ(node.z));
+      if (!this.floods.some((c) => c.index === i)) continue;
+      if (RESOURCES[node.kind].category !== 'tree') continue;
+      if (!this.rng.chance(0.35 + wave.strength * 0.4)) continue;
+      world.removeNode(node);
+    }
+
+    if (drowned > 0) world.onFloodStarted(wave.x, wave.z, reach);
+    world.log.add(
+      world.time,
+      'disaster',
+      'event.tsunami',
+      { flooded: drowned, destroyed: lost },
+      { notable: true, x: wave.x, z: wave.z },
+    );
+  }
+
+  /** The nearest tile of real sea, for launching a wave off. */
+  private nearestOpenWater(
+    world: World,
+    x: number,
+    z: number,
+    maxDistance: number,
+  ): { x: number; z: number } | null {
+    const t = world.terrain;
+    const ts = t.tileSize;
+    const r = Math.ceil(maxDistance / ts);
+    const cx = t.tileX(x);
+    const cz = t.tileZ(z);
+    let best: { x: number; z: number } | null = null;
+    let bestD = Infinity;
+    for (let dz = -r; dz <= r; dz += 2) {
+      for (let dx = -r; dx <= r; dx += 2) {
+        const tx = cx + dx;
+        const tz = cz + dz;
+        if (!t.inBounds(tx, tz)) continue;
+        const i = t.index(tx, tz);
+        // Real sea, not a pond: it has to be below sea level and deep enough
+        // to have something in it to displace.
+        if (t.data.height[i] > -3 || t.waterHeight[i] <= t.data.height[i]) continue;
+        const d = Math.hypot(dx, dz) * ts;
+        if (d > maxDistance || d >= bestD) continue;
+        bestD = d;
+        best = { x: t.worldXOf(tx), z: t.worldZOf(tz) };
+      }
+    }
+    return best;
   }
 
   // =======================================================================
@@ -413,10 +625,75 @@ export class DisasterManager {
   // Meteor
   // =======================================================================
 
+  /**
+   * Calls something down on a place, from a long way up.
+   *
+   * The rock enters high and off to one side, so it crosses the sky rather
+   * than dropping on the spot, and takes several seconds about it. Everything
+   * that happens on impact is unchanged -- this only puts the approach in
+   * front of the player, which is the part that was missing.
+   */
+  callDownMeteor(world: World, x: number, z: number, size: number): FallingBody {
+    const flight = 6 + size * 4;
+    const angle = this.rng.range(0, Math.PI * 2);
+    const reach = 420 + size * 380;
+    const altitude = 620 + size * 540;
+    const body: FallingBody = {
+      id: this.nextBodyId++,
+      x: x + Math.cos(angle) * reach,
+      y: world.terrain.heightAt(x, z) + altitude,
+      z: z + Math.sin(angle) * reach,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      size,
+      targetX: x,
+      targetZ: z,
+      left: flight,
+      flight,
+    };
+    const ground = world.terrain.heightAt(x, z);
+    body.vx = (x - body.x) / flight;
+    body.vy = (ground - body.y) / flight;
+    body.vz = (z - body.z) / flight;
+    this.falling.push(body);
+
+    world.log.add(world.time, 'disaster', 'ev.skyfallSeen', undefined, {
+      notable: true,
+      x: body.x,
+      z: body.z,
+    });
+    // Everyone who can see it stops what they are doing and looks.
+    for (const npc of world.npcs) world.startleNpc(npc, body.x, body.z);
+    return body;
+  }
+
+  /** Moves what is in the air, and lands it. */
+  updateSkyfall(world: World, dt: number): void {
+    if (this.falling.length === 0) return;
+    for (let i = this.falling.length - 1; i >= 0; i--) {
+      const b = this.falling[i];
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.z += b.vz * dt;
+      b.left -= dt;
+
+      const ground = world.terrain.heightAt(b.x, b.z);
+      if (b.left > 0 && b.y > ground) continue;
+
+      this.falling.splice(i, 1);
+      this.meteor(world, b.targetX, b.targetZ, b.size);
+    }
+  }
+
   meteor(world: World, x: number, z: number, size: number): void {
     const radius = 14 + size * 26;
     // The crater itself.
-    world.editor.sculpt(x, z, radius, -(4 + size * 10), 'crater', 'meteor');
+    // A crater shape digs its own bowl and throws up its own rim, so the
+    // depth it is given is positive. Handing it a negative depth turned it
+    // inside out, and every meteor in this world left a hill behind it
+    // with a moat round the outside.
+    world.editor.sculpt(x, z, radius, 4 + size * 10, 'crater', 'meteor');
 
     // Everything inside is flattened.
     const doomed: number[] = [];

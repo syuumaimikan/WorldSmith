@@ -253,7 +253,7 @@ export class GodMode {
         break;
       }
       case 'meteor':
-        w.disasters.meteor(w, x, z, s);
+        w.disasters.callDownMeteor(w, x, z, s);
         break;
     }
 

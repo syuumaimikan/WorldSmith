@@ -60,6 +60,7 @@ import { Development } from './Development';
 import { TechnologySystem } from './Technology';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
+import { makeHotspots } from '../world/Plates';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
 import { Inventory } from './Inventory';
 
@@ -556,8 +557,104 @@ export class World {
 
   /** Called once after a fresh world is generated. */
   bootstrap(): void {
+    this.seedVolcanoes();
     this.seedNeighbours(false);
     this.settle();
+  }
+
+  /**
+   * Where the world's volcanoes are, and why they are there.
+   *
+   * Volcanoes are not scattered on the high ground. Nearly all of them stand
+   * in two places: above a slab of ocean floor going down under a continent,
+   * a hundred kilometres or so back from the trench -- that is the Andes, the
+   * Cascades, Japan -- and over a plume in the mantle that the plate is
+   * riding across, which is Hawaii. This world has both of those already,
+   * because the land was built from them, so the volcanoes go where they put
+   * them rather than where a die says.
+   *
+   * Nothing is sculpted here. The cordillera is already standing; this only
+   * decides which of its peaks is the one with a crater in it.
+   */
+  private seedVolcanoes(): void {
+    if (this.volcanoes.length > 0) return;
+    const t = this.terrain;
+    const size = t.worldSize;
+    const spots: { x: number; z: number }[] = [];
+
+    // Island and continental arcs. Step inland from the trench onto the plate
+    // that is riding over the slab, and see what is standing there.
+    for (const f of this.tectonics.faults) {
+      if (f.kind !== 'convergent') continue;
+      const a = this.tectonics.plates[f.plateA];
+      const b = this.tectonics.plates[f.plateB];
+      // No slab going down, no melt, no volcano: a continental collision
+      // builds the Himalaya and not one cone on it.
+      if (a.oceanic === b.oceanic) continue;
+      const over = a.oceanic ? b : a;
+      const dx = over.x - f.x;
+      const dz = over.z - f.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const inland = size * 0.035;
+      spots.push({ x: f.x + (dx / len) * inland, z: f.z + (dz / len) * inland });
+    }
+
+    // And the plumes, which do not care where the boundaries are.
+    for (const hot of makeHotspots(this.config.seed, size)) {
+      spots.push({ x: hot.x, z: hot.z });
+    }
+
+    const placed: Volcano[] = [];
+    const spacing = size * 0.07;
+    for (const spot of spots) {
+      if (placed.length >= 7) break;
+      const peak = this.highestNear(spot.x, spot.z, size * 0.03);
+      if (!peak) continue;
+      let crowded = false;
+      for (const v of placed) {
+        if (Math.hypot(v.x - peak.x, v.z - peak.z) < spacing) crowded = true;
+      }
+      if (crowded) continue;
+
+      const radius = 55 + this.rng.range(0, 55);
+      placed.push({
+        id: this.nextId(),
+        x: peak.x,
+        z: peak.z,
+        radius,
+        state: 'dormant',
+        // How charged it is when the player arrives is a matter of where it
+        // happens to be in a cycle that started long before they did.
+        pressure: this.rng.range(0.05, 0.85),
+        name: this.namer.featureName('volcano', `${Math.round(peak.x)},${Math.round(peak.z)}`),
+      });
+    }
+    for (const v of placed) this.volcanoes.push(v);
+  }
+
+  /** The highest standing ground within reach of a point, if any is dry. */
+  private highestNear(x: number, z: number, reach: number): { x: number; z: number } | null {
+    const t = this.terrain;
+    const step = Math.max(1, Math.round(reach / (t.tileSize * 8)));
+    const r = Math.round(reach / t.tileSize);
+    const cx = t.tileX(x);
+    const cz = t.tileZ(z);
+    let best: { x: number; z: number } | null = null;
+    let bestH = 6;
+    for (let dz = -r; dz <= r; dz += step) {
+      for (let dx = -r; dx <= r; dx += step) {
+        const tx = cx + dx;
+        const tz = cz + dz;
+        if (!t.inBounds(tx, tz)) continue;
+        const i = t.index(tx, tz);
+        if (t.waterHeight[i] > t.data.height[i]) continue;
+        const h = t.data.height[i];
+        if (h <= bestH) continue;
+        bestH = h;
+        best = { x: t.worldXOf(tx), z: t.worldZOf(tz) };
+      }
+    }
+    return best;
   }
 
   /**
@@ -1754,6 +1851,8 @@ export class World {
     // burning forest is genuinely racing the rain.
     this.disasters.updateFires(this, dt);
     this.disasters.updateFloods(this, dt);
+    this.disasters.updateSkyfall(this, dt);
+    this.disasters.updateWaves(this, dt);
     updateVolcanoes(this, dt);
 
     // Crops.
@@ -2552,7 +2651,7 @@ export class World {
     const height = 25 + strength * 90;
     this.editor.sculpt(x, z, radius, height, 'cone', 'volcano');
     // A crater at the summit.
-    this.editor.sculpt(x, z, radius * 0.2, -height * 0.16, 'crater', 'volcano crater');
+    this.editor.sculpt(x, z, radius * 0.2, height * 0.16, 'crater', 'volcano crater');
     // Nothing survives being under a new mountain.
     const doomed: ResourceNode[] = [];
     this.nodeGrid.forEachNear(x, z, radius, (n) => doomed.push(n));

@@ -60,8 +60,8 @@ describe('save and load', () => {
 
     const loaded = roundTrip(world);
     expect(loaded.disasters.activeFireCount).toBe(fires);
-    expect(loaded.volcanoes.length).toBe(1);
-    expect(loaded.volcanoes[0].name).toBe(world.volcanoes[0].name);
+    expect(loaded.volcanoes.length).toBe(world.volcanoes.length);
+    expect(loaded.volcanoes.map((v) => v.name)).toEqual(world.volcanoes.map((v) => v.name));
   });
 
   it('remembers who the player was driving', () => {
