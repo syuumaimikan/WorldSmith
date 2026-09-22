@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { Astronomy, SYNODIC_DAYS } from '../sim/Astronomy';
 import { Namer } from '../sim/Naming';
-import { GameTime, DAYS_PER_YEAR } from '../sim/Time';
+import { DAYS_PER_YEAR, GameTime, SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { hashString } from '../core/rng';
 import { buildTestWorld, makeTestConfig } from './harness';
 
@@ -220,7 +220,8 @@ describe('the world above the world', () => {
     const target = forecast[0];
     world.time.totalHours = target.atDay * 24;
     // Enough ticks to cross an atmosphere step, which is where the sky is read.
-    for (let i = 0; i < 60; i++) world.simulate(1 / 15);
+    const ticks = Math.ceil(SECONDS_PER_GAME_HOUR / 2 / (1 / 15));
+    for (let i = 0; i < ticks; i++) world.simulate(1 / 15);
 
     const announced = world.log
       .all()

@@ -18,7 +18,7 @@
  * true of every real chronicle.
  */
 
-import { DAYS_PER_YEAR } from './Time';
+import { DAYS_PER_YEAR, SECONDS_PER_GAME_HOUR } from './Time';
 import type { World } from './World';
 
 /** Days of history per step. Polities move at the pace of seasons anyway. */
@@ -51,7 +51,7 @@ export function preSimulate(
   const report = Math.max(1, Math.floor(steps / 60));
 
   for (let i = 0; i < steps; i++) {
-    world.time.advance(hours * 12);
+    world.time.advance(hours * SECONDS_PER_GAME_HOUR);
     world.nations.update(world, hours);
     world.diplomacy.update(world, hours);
     world.culture.update(world, hours);

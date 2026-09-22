@@ -281,7 +281,12 @@ export class Game {
     }
     if (this.simAccumulator > SIM_TICK) this.simAccumulator = 0;
 
-    this.updatePresentation(dt);
+    // Everything the player can see runs on the same clock the world does:
+    // at four times speed the wind, the water, the walking and the drifting
+    // cloud all go four times as fast. Presentation running at wall-clock
+    // speed while the world runs at eight is what makes a sped-up game look
+    // like a slideshow of a fast world rather than a fast world.
+    this.updatePresentation(dt * Math.max(1, speed));
 
     this.renderer.render(this.scene, this.cameras.camera, performance.now() - t0);
     this.input.endFrame();
@@ -671,6 +676,9 @@ export class Game {
 
   // ---------------------------------------------------------- presentation
 
+  /**
+   * @param dt seconds of *presentation* time, already scaled by game speed.
+   */
   private updatePresentation(dt: number): void {
     const world = this.world;
     const player = world.player;
@@ -716,7 +724,17 @@ export class Game {
       .set(Math.cos(moment.moonAzimuth), moment.moonAltitude * 1.05, -0.3)
       .normalize();
     this.sky.setEclipse(moment.eclipse);
+    this.sky.setViewMatrix(this.cameras.camera.matrixWorldInverse.elements);
     this.sky.update(skyState, camPos, dt);
+
+    // Water is lit by the same sun as everything else, and takes the colour of
+    // the same sky, so it goes gold at dusk with the rest of the world.
+    this.terrainRenderer.setSunlight(
+      this.sky.sunDirection,
+      this.sky.sun.color,
+      this.sky.horizonColor,
+      1 - this.sky.daylight,
+    );
 
     this.stars.update(
       camPos,
@@ -849,6 +867,29 @@ export class Game {
         this.particles.emit('smoke', f.x, y + 1.6, f.z, 1);
       }
     }
+  }
+
+  /**
+   * Called once a time skip has finished.
+   *
+   * Centuries went by without a frame being drawn, so everything that is
+   * cached from the world rather than read from it — the season's tint, the
+   * snow line, the terrain colouring — is out of date and has to be rebuilt.
+   */
+  afterTimeSkip(): void {
+    const season = this.world.time.snapshot().season as Season;
+    this.tint = {
+      season,
+      seasonTempOffset: this.world.climate.groundTemperatureOffset(),
+      snowCover: this.world.climate.snowCover(),
+    };
+    this.snowShown = this.tint.snowCover;
+    this.terrainRenderer.setTint(this.tint);
+    this.terrainRenderer.markAllDirty();
+    this.vegetation.setSeason(season, this.world.config.climate === 'cold');
+    this.buildingRenderer.setSeason(season);
+    this.build.setSeason(season);
+    this.publishHud();
   }
 
   private applySeason(season: Season): void {

@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { buildTestWorld, makeTestConfig, run, runAir } from './harness';
 
 /** One game year is 60 days. */
@@ -151,7 +152,7 @@ describe('the atmosphere', () => {
 describe('the weather you stand in', () => {
   it('reports the air over the player, not a global roll', () => {
     const world = buildTestWorld();
-    run(world, 24 * 12);
+    run(world, 24 * SECONDS_PER_GAME_HOUR);
     const here = world.player.position;
     expect(world.weather.current).toBe(world.climate.kindAt(here.x, here.z));
     expect(world.weather.temperature).toBeCloseTo(
@@ -173,10 +174,10 @@ describe('the weather you stand in', () => {
   it('lets a god power override the atmosphere, then hands it back', () => {
     const world = buildTestWorld();
     world.weather.force('storm', 6);
-    run(world, 12);
+    run(world, SECONDS_PER_GAME_HOUR);
     expect(world.weather.current).toBe('storm');
     expect(world.weather.isForced).toBe(true);
-    run(world, 12 * 10);
+    run(world, SECONDS_PER_GAME_HOUR * 10);
     expect(world.weather.isForced).toBe(false);
   });
 });

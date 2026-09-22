@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { buildTestWorld, makeTestConfig } from './harness';
 import type { World } from '../sim/World';
 import { GOVERNMENTS, LAWS, Nation } from '../sim/Nations';
@@ -21,7 +22,7 @@ import { GOVERNMENTS, LAWS, Nation } from '../sim/Nations';
  */
 function runPolitics(world: World, days: number): void {
   for (let d = 0; d < days; d++) {
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     world.nations.update(world, 24);
     world.diplomacy.update(world, 24);
   }

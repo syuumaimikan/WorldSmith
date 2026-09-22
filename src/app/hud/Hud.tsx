@@ -35,6 +35,7 @@ export type PanelId =
   | 'sky'
   | 'nation'
   | 'chronicle'
+  | 'skip'
   | 'menu';
 
 interface Props {

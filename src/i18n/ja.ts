@@ -437,6 +437,14 @@ export const ja: Record<string, string> = {
 
   // ------------------------------------------------------------------ pause
   'pause.resume': '再開',
+  'skip.title': '年月を送る',
+  'skip.blurb': '世界はあなたを待たずに進む。国は興り滅び、信仰は広まり分かれ、技術は得られ失われ、大地は動き続ける。あなたの集落はその場に留め置かれる——六人が板を運ぶ百年を正直に早送りすることはできないからだ——ので、この間に建つものも食べられるものもない。何が起きたかは、後で年代記を読むとよい。',
+  'skip.now': '現在',
+  'skip.settlers': '住民',
+  'skip.years': '{years}年進める',
+  'skip.anAge': '一時代進める（{years}年）',
+  'skip.running': '年月が流れている——{year}年',
+  'skip.done': '{years}年が過ぎた。今は{day}年である。',
   'pause.save': '世界を保存',
   'pause.saving': '保存中…',
   'pause.saved': '保存しました。',

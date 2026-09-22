@@ -6,7 +6,14 @@
  * often. Speed multipliers scale how much game time each real second buys.
  */
 
-export const SECONDS_PER_GAME_HOUR = 12;
+/**
+ * Real seconds of simulated time per game hour at normal speed.
+ *
+ * Twenty real minutes to a game day, which is long enough that a day has
+ * shape to it -- a morning, an afternoon, a dusk you can work through -- and
+ * short enough that a season still turns while you are watching.
+ */
+export const SECONDS_PER_GAME_HOUR = 50;
 export const HOURS_PER_DAY = 24;
 export const DAYS_PER_MONTH = 5;
 export const MONTHS_PER_SEASON = 3;

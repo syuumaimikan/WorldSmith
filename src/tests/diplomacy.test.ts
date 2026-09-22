@@ -9,13 +9,14 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { buildTestWorld, makeTestConfig } from './harness';
 import type { World } from '../sim/World';
 import type { Nation } from '../sim/Nations';
 
 function runPolitics(world: World, days: number): void {
   for (let d = 0; d < days; d++) {
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     world.nations.update(world, 24);
     world.diplomacy.update(world, 24);
   }
@@ -207,7 +208,7 @@ describe('armies in the field', () => {
     const before = army.strength;
 
     for (let d = 0; d < 30; d++) {
-      world.time.advance(24 * 12);
+      world.time.advance(24 * SECONDS_PER_GAME_HOUR);
       world.diplomacy.update(world, 24);
       army.targetX = army.x;
       army.targetZ = army.z;
@@ -228,7 +229,7 @@ describe('armies in the field', () => {
     armyB.z = armyA.z;
     const before = { a: armyA.strength, b: armyB.strength };
 
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     world.diplomacy.update(world, 24);
 
     expect(armyA.strength).toBeLessThan(before.a);
@@ -254,7 +255,7 @@ describe('sieges', () => {
 
     const before = b.unrest;
     for (let d = 0; d < 40; d++) {
-      world.time.advance(24 * 12);
+      world.time.advance(24 * SECONDS_PER_GAME_HOUR);
       world.diplomacy.update(world, 24);
     }
     const sieging = world.diplomacy.armies.some((x) => x.besieging === b.id);
@@ -283,7 +284,7 @@ describe('sieges', () => {
     for (const b of world.buildings) scars.push(b.condition);
 
     for (let d = 0; d < 60; d++) {
-      world.time.advance(24 * 12);
+      world.time.advance(24 * SECONDS_PER_GAME_HOUR);
       world.diplomacy.update(world, 24);
       army.supply = 1;
     }

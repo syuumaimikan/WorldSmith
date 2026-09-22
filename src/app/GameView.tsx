@@ -16,6 +16,7 @@ import { NationPanel } from './panels/NationPanel';
 import { ChroniclePanel } from './panels/ChroniclePanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { PausePanel } from './panels/PausePanel';
+import { TimeSkipPanel } from './panels/TimeSkipPanel';
 import { autosaveWorld, newSaveId, saveWorld } from '../persistence/saves';
 import { loadBindings } from '../persistence/settings';
 import { Action } from '../engine/Input';
@@ -41,6 +42,7 @@ const MODAL_PANELS: PanelId[] = [
   'sky',
   'nation',
   'chronicle',
+  'skip',
   'menu',
 ];
 
@@ -243,12 +245,14 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
           {panel === 'sky' && <SkyPanel game={game} onClose={closePanel} />}
           {panel === 'nation' && <NationPanel game={game} onClose={closePanel} />}
           {panel === 'chronicle' && <ChroniclePanel game={game} onClose={closePanel} />}
+          {panel === 'skip' && <TimeSkipPanel game={game} onClose={closePanel} />}
           {panel === 'menu' && (
             <PausePanel
               worldName={world.config.name}
               onResume={closePanel}
               onSave={doSave}
               onSettings={() => setShowSettings(true)}
+              onTimeSkip={() => setPanel('skip')}
               onExit={exitWithSave}
             />
           )}

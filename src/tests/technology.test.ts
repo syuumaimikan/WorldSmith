@@ -10,13 +10,13 @@ import { describe, expect, it } from 'vitest';
 import { buildTestWorld, makeTestConfig } from './harness';
 import type { World } from '../sim/World';
 import { ERAS } from '../sim/Technology';
-import { DAYS_PER_YEAR } from '../sim/Time';
+import { DAYS_PER_YEAR, SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { deserializeWorld, serializeWorld } from '../persistence/serialize';
 import { migrate, SaveData, validate } from '../persistence/schema';
 
 function runAges(world: World, years: number): void {
   for (let d = 0; d < years * DAYS_PER_YEAR; d++) {
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     world.nations.update(world, 24);
     world.diplomacy.update(world, 24);
     world.culture.update(world, 24);
@@ -27,7 +27,7 @@ function runAges(world: World, years: number): void {
 /** Technology alone, so nothing else moves the numbers under it. */
 function runQuiet(world: World, years: number): void {
   for (let d = 0; d < years * DAYS_PER_YEAR; d++) {
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     world.technology.update(world, 24);
   }
 }
@@ -125,7 +125,7 @@ describe('what an era is worth', () => {
       world.technology.knowledge.set(n.id, knowledge);
       n.population = 10;
       for (let d = 0; d < DAYS_PER_YEAR * 200; d++) {
-        world.time.advance(24 * 12);
+        world.time.advance(24 * SECONDS_PER_GAME_HOUR);
         world.nations.update(world, 24);
       }
       return n.population;

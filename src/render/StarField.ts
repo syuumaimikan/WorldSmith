@@ -131,7 +131,7 @@ export class StarField {
       },
       transparent: true,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       blending: AdditiveBlending,
       fog: false,
     });
@@ -160,7 +160,7 @@ export class StarField {
       transparent: true,
       opacity: 0,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       fog: false,
     });
     this.lines = new LineSegments(lineGeo, this.lineMaterial);
@@ -175,7 +175,7 @@ export class StarField {
       transparent: true,
       opacity: 0.9,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       blending: AdditiveBlending,
       fog: false,
     });

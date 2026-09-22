@@ -437,6 +437,14 @@ export const en: Record<string, string> = {
 
   // ------------------------------------------------------------------ pause
   'pause.resume': 'Resume',
+  'skip.title': 'Let the years pass',
+  'skip.blurb': 'The world goes on without you: countries rise and fall, faiths spread and split, know-how is won and lost, and the ground keeps moving. Your settlement is held where it stands — a century of six people carrying planks is not something that can honestly be hurried — so nothing here is built or eaten while the years run. Read the chronicle afterwards to see what happened.',
+  'skip.now': 'Now',
+  'skip.settlers': 'Settlers',
+  'skip.years': 'Skip {years} years',
+  'skip.anAge': 'Skip an age ({years} years)',
+  'skip.running': 'The years are passing — year {year}',
+  'skip.done': '{years} years passed. It is year {day}.',
   'pause.save': 'Save world',
   'pause.saving': 'Saving…',
   'pause.saved': 'Saved.',

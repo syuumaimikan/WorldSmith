@@ -13,14 +13,14 @@ import { buildTestWorld, makeTestConfig } from './harness';
 import type { World } from '../sim/World';
 import { Nation } from '../sim/Nations';
 import { Religion, TENETS, VALUE_IDS } from '../sim/Culture';
-import { DAYS_PER_YEAR } from '../sim/Time';
+import { DAYS_PER_YEAR, SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { deserializeWorld, serializeWorld } from '../persistence/serialize';
 import { migrate, SaveData, validate } from '../persistence/schema';
 
 /** Runs `days` of politics and belief together. */
 function runBelief(world: World, days: number): void {
   for (let d = 0; d < days; d++) {
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     world.nations.update(world, 24);
     world.diplomacy.update(world, 24);
     world.culture.update(world, 24);
@@ -30,7 +30,7 @@ function runBelief(world: World, days: number): void {
 /** Belief alone: no treaties form, so no roads open between anyone. */
 function runSealed(world: World, days: number): void {
   for (let d = 0; d < days; d++) {
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     world.culture.update(world, 24);
   }
 }
@@ -193,7 +193,7 @@ describe('a faith breaking in two', () => {
     let sect: Religion | undefined;
     for (let year = 0; year < 400 && !sect; year++) {
       for (let d = 0; d < DAYS_PER_YEAR; d++) {
-        world.time.advance(24 * 12);
+        world.time.advance(24 * SECONDS_PER_GAME_HOUR);
         if (!world.diplomacy.atWar(a.id, b.id)) {
           world.diplomacy.declareWar(world, a, b, 'conquest');
         }
@@ -227,7 +227,7 @@ describe('what a people hold worth doing', () => {
       const world = buildTestWorld();
       const [them, neighbour] = world.nations.nations.filter((n) => !n.isPlayer);
       for (let d = 0; d < DAYS_PER_YEAR * 300; d++) {
-        world.time.advance(24 * 12);
+        world.time.advance(24 * SECONDS_PER_GAME_HOUR);
         if (fighting && world.diplomacy.warsOf(them.id).length === 0) {
           world.diplomacy.declareWar(world, them, neighbour, 'conquest');
         }

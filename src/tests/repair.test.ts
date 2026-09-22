@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { buildTestWorld, placeNear, run } from './harness';
 import type { World } from '../sim/World';
 import type { Building } from '../sim/Building';
+import { SECONDS_PER_GAME_HOUR } from '../sim/Time';
 
 /** Builds a tent and waits for it to finish, the way the acceptance test does. */
 function finishedTent(world: World): Building {
@@ -98,12 +99,19 @@ describe('damaged buildings', () => {
     }
     expect(tent.readyToRepair()).toBe(true);
 
-    // Let the board reconcile repeatedly; it must not stack duplicates.
-    for (let i = 0; i < 12; i++) run(world, 2);
-    const repairJobs = world.jobs.all.filter(
-      (j) => j.kind === 'repair' && j.buildingId === tent.id,
-    );
-    expect(repairJobs.length).toBe(1);
+    // Let the board reconcile repeatedly. There must never be more than one
+    // job for this building outstanding, at any point along the way — and
+    // there must have been one, or the test is asserting nothing.
+    let sawOne = false;
+    for (let i = 0; i < 12; i++) {
+      run(world, SECONDS_PER_GAME_HOUR / 6);
+      const open = world.jobs.all.filter(
+        (j) => j.kind === 'repair' && j.buildingId === tent.id,
+      );
+      expect(open.length).toBeLessThanOrEqual(1);
+      if (open.length === 1) sawOne = true;
+    }
+    expect(sawOne).toBe(true);
   });
 
   it('is not repaired by the passage of time alone', () => {

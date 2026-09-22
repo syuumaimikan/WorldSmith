@@ -12,21 +12,16 @@ import {
   DirectionalLight,
   FogExp2,
   HemisphereLight,
-  InstancedMesh,
-  Matrix4,
   Mesh,
   MeshBasicMaterial,
-  MeshLambertMaterial,
-  Quaternion,
   Scene,
   ShaderMaterial,
   SphereGeometry,
   Vector3,
 } from 'three';
 import { clamp01, lerp, smoothstep, TAU } from '../core/math';
-import { Rng } from '../core/rng';
 import { PALETTE } from './Palette';
-import { buildCloudGeometry } from './geometry/clouds';
+import { CloudLayer } from './Clouds';
 
 export type WeatherKind = 'clear' | 'cloudy' | 'rain' | 'heavy_rain' | 'fog' | 'storm' | 'snow';
 
@@ -120,20 +115,17 @@ export class SkySystem {
   private moonMaterial: ShaderMaterial;
   /** Where the moon actually is, set by the astronomy each frame. */
   readonly moonDirection = new Vector3(0, -1, 0);
-  private clouds: InstancedMesh;
-  private cloudBase: { x: number; y: number; z: number; s: number; r: number }[] = [];
-  private cloudDrift = 0;
+  private clouds: CloudLayer;
 
   private fog: FogExp2;
+  /** The camera's view matrix, needed to light the clouds from the sun. */
+  private viewElements: Float32Array | number[] = new Float32Array(16);
 
-  private horizonColor = new Color();
+  /** The sky colour at the horizon. Water and clouds both pick it up. */
+  readonly horizonColor = new Color();
   private zenithColor = new Color();
   private tmpColor = new Color();
   private tmpColor2 = new Color();
-  private mat4 = new Matrix4();
-  private quat = new Quaternion();
-  private vec = new Vector3();
-  private scaleVec = new Vector3();
 
   /** 0 at night, 1 in full day. Read by gameplay for lamp lighting etc. */
   daylight = 1;
@@ -145,7 +137,6 @@ export class SkySystem {
 
   constructor(scene: Scene, seed: number, worldSize: number) {
     this.scene = scene;
-    const rng = new Rng(seed ^ 0x5c1f);
 
     this.domeMat = new ShaderMaterial({
       uniforms: {
@@ -219,33 +210,7 @@ export class SkySystem {
     this.moonDisc.renderOrder = -999;
     scene.add(this.moonDisc);
 
-    // ------------------------------------------------------------- clouds
-    const cloudGeo = buildCloudGeometry();
-    const cloudMat = new MeshLambertMaterial({
-      color: PALETTE.sky.cloud,
-      flatShading: true,
-      fog: false,
-      transparent: true,
-      opacity: 0.94,
-    });
-    const CLOUD_MAX = 160;
-    this.clouds = new InstancedMesh(cloudGeo, cloudMat, CLOUD_MAX);
-    this.clouds.frustumCulled = false;
-    this.clouds.renderOrder = -900;
-    this.clouds.castShadow = false;
-    scene.add(this.clouds);
-
-    const spread = Math.max(worldSize, 1200) * 1.5;
-    for (let i = 0; i < CLOUD_MAX; i++) {
-      this.cloudBase.push({
-        x: rng.range(-spread, spread),
-        y: rng.range(230, 420),
-        z: rng.range(-spread, spread),
-        s: rng.range(22, 62),
-        r: rng.range(0, TAU),
-      });
-    }
-
+    this.clouds = new CloudLayer(scene, seed, worldSize);
   }
 
   /**
@@ -260,6 +225,11 @@ export class SkySystem {
   /**
    * @param focus the point the shadow frustum should centre on (the player).
    */
+  /** Told each frame, so the lit side of a cloud is right as the head turns. */
+  setViewMatrix(elements: Float32Array | number[]): void {
+    this.viewElements = elements;
+  }
+
   update(state: SkyState, focus: Vector3, dt: number): void {
     const { timeOfDay, weather, daylightSkew } = state;
 
@@ -364,49 +334,24 @@ export class SkySystem {
     this.moonMaterial.uniforms.uOpacity.value = clamp01(night * 1.6) * (1 - cloudCover * 0.8);
 
 
-    this.updateClouds(focus, cloudCover, day, dt);
-  }
-
-  private updateClouds(focus: Vector3, cover: number, day: number, dt: number): void {
-    const count = Math.min(this.cloudBase.length, Math.round(this.cloudBase.length * cover));
-    this.clouds.count = count;
-    if (count === 0) {
-      this.clouds.visible = false;
-      return;
-    }
-    this.clouds.visible = true;
-
-    this.cloudDrift += dt * 2.6;
-    const wrap = 3000;
-    const mat = this.clouds.material as MeshLambertMaterial;
-    // Clouds catch the sun colour at dawn and dusk.
-    mat.color.copy(this.horizonColor).lerp(this.tmpColor.setHex(PALETTE.sky.cloud), 0.35 + day * 0.5);
-    mat.opacity = 0.55 + cover * 0.4;
-
-    for (let i = 0; i < count; i++) {
-      const b = this.cloudBase[i];
-      let x = b.x + this.cloudDrift;
-      x = ((((x - focus.x + wrap) % (wrap * 2)) + wrap * 2) % (wrap * 2)) - wrap + focus.x;
-      let z = b.z;
-      z = ((((z - focus.z + wrap) % (wrap * 2)) + wrap * 2) % (wrap * 2)) - wrap + focus.z;
-      this.vec.set(x, b.y, z);
-      this.quat.setFromAxisAngle(UP, b.r);
-      this.scaleVec.set(b.s, b.s * 0.42, b.s);
-      this.mat4.compose(this.vec, this.quat, this.scaleVec);
-      this.clouds.setMatrixAt(i, this.mat4);
-    }
-    this.clouds.instanceMatrix.needsUpdate = true;
+    this.clouds.update(
+      focus,
+      cloudCover,
+      day,
+      this.sunDirection,
+      this.horizonColor,
+      this.viewElements,
+      dt,
+    );
   }
 
   dispose(): void {
-    this.scene.remove(this.dome, this.sunDisc, this.moonDisc, this.clouds);
+    this.clouds.dispose();
+    this.scene.remove(this.dome, this.sunDisc, this.moonDisc);
     this.scene.remove(this.sun, this.sun.target, this.moon, this.moon.target, this.hemi);
     this.dome.geometry.dispose();
     this.domeMat.dispose();
-    this.clouds.geometry.dispose();
-    (this.clouds.material as MeshLambertMaterial).dispose();
     this.moonMaterial.dispose();
   }
 }
 
-const UP = new Vector3(0, 1, 0);

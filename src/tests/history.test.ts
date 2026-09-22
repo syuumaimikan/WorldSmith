@@ -12,7 +12,7 @@ import { buildTestWorld } from './harness';
 import type { World } from '../sim/World';
 import type { Nation } from '../sim/Nations';
 import { Snapshot } from '../sim/History';
-import { DAYS_PER_YEAR } from '../sim/Time';
+import { DAYS_PER_YEAR, SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { deserializeWorld, serializeWorld } from '../persistence/serialize';
 import { migrate, SaveData, validate } from '../persistence/schema';
 
@@ -25,7 +25,7 @@ type AnySave = SaveData & Record<string, unknown>;
  */
 function runYears(world: World, years: number, keepAtWar?: [Nation, Nation]): void {
   for (let d = 0; d < years * DAYS_PER_YEAR; d++) {
-    world.time.advance(24 * 12);
+    world.time.advance(24 * SECONDS_PER_GAME_HOUR);
     if (keepAtWar && world.diplomacy.warsOf(keepAtWar[0].id).length === 0) {
       world.diplomacy.declareWar(world, keepAtWar[0], keepAtWar[1], 'conquest');
     }
@@ -68,7 +68,7 @@ describe('what a world remembers', () => {
     const world = buildTestWorld();
     // Far more than it can hold, half of it barely worth keeping.
     for (let i = 0; i < 4000; i++) {
-      world.time.advance(24 * 12 * 5);
+      world.time.advance(24 * SECONDS_PER_GAME_HOUR * 5);
       world.log.add(world.time, 'settlement', 'ev.treatyTrade', { a: 'x', b: 'y' });
     }
     expect(world.history.annals.length).toBeLessThanOrEqual(3000);

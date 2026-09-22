@@ -15,15 +15,18 @@ import {
   MeshLambertMaterial,
   Object3D,
   Scene,
+  ShaderMaterial,
   Sphere,
   Vector3,
 } from 'three';
 import { Terrain } from '../world/Terrain';
 import { Biome } from '../world/types';
 import { NO_WATER } from '../world/TerrainGen';
-import { groundColor, TerrainTint, waterColor } from './TerrainColors';
+import { groundColor, TerrainTint } from './TerrainColors';
+import { makeWaterMaterial, WaterUniforms } from './Water';
 import { PALETTE } from './Palette';
 import { mulberry32 } from '../core/rng';
+import { clamp01 } from '../core/math';
 
 const LOD_DISTANCES = [150, 290, 520, 900];
 const MAX_VISIBLE_DISTANCE = 1500;
@@ -52,8 +55,8 @@ export class TerrainRenderer {
   private queue: Chunk[] = [];
   private tint: TerrainTint;
   private groundMat: MeshLambertMaterial;
-  private waterMat: MeshLambertMaterial;
-  private waterTimeUniform = { value: 0 };
+  private waterMat: ShaderMaterial;
+  private waterUniforms: WaterUniforms;
   private jitterRandom: (i: number) => number;
 
   constructor(terrain: Terrain, scene: Scene, tint: TerrainTint) {
@@ -72,13 +75,9 @@ export class TerrainRenderer {
       flatShading: true,
     });
 
-    this.waterMat = new MeshLambertMaterial({
-      vertexColors: true,
-      flatShading: true,
-      transparent: true,
-      opacity: 0.86,
-    });
-    this.applyWaterWaves(this.waterMat);
+    const water = makeWaterMaterial();
+    this.waterMat = water.material;
+    this.waterUniforms = water.uniforms;
 
     // Deterministic per-face value jitter; cheap stand-in for texture detail.
     const table = new Float32Array(4096);
@@ -107,6 +106,11 @@ export class TerrainRenderer {
     }
   }
 
+  /** Every chunk is rebuilt next time it is in range. */
+  markAllDirty(): void {
+    for (const c of this.chunks) c.dirty = true;
+  }
+
   setTint(tint: TerrainTint): void {
     this.tint = tint;
     for (const c of this.chunks) c.dirty = true;
@@ -127,7 +131,7 @@ export class TerrainRenderer {
    * within a millisecond budget.
    */
   update(camera: Vector3, dt: number, budgetMs = 4): void {
-    this.waterTimeUniform.value += dt;
+    this.waterUniforms.uTime.value += dt;
 
     // Drain overlay changes recorded by gameplay.
     if (this.terrain.dirtyChunks.size > 0) {
@@ -360,6 +364,15 @@ export class TerrainRenderer {
 
   // ----------------------------------------------------------------- water
 
+  /**
+   * Builds one continuous sheet for the chunk.
+   *
+   * Vertices are shared across the whole grid, so the ripple in the shader is
+   * a wave crossing a surface rather than a set of squares each jittering on
+   * their own. A vertex takes its level from the wet tiles that touch it,
+   * which is what stops two neighbouring pools at different heights from
+   * terracing against each other.
+   */
   private buildWater(c: Chunk, lod: number): BufferGeometry | null {
     const t = this.terrain;
     const d = t.data;
@@ -368,92 +381,87 @@ export class TerrainRenderer {
     const step = 1 << Math.min(lod, 2);
     const tiles = this.chunkTiles;
     const quads = Math.max(1, tiles / step);
+    const side = quads + 1;
     const baseX = c.cx * tiles;
     const baseZ = c.cz * tiles;
 
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const tmp = new Color();
+    const clampTile = (v: number): number => (v < 0 ? 0 : v >= N ? N - 1 : v);
+    const waterAt = (tx: number, tz: number): number =>
+      t.waterHeight[clampTile(tz) * N + clampTile(tx)];
+    const groundAt = (tx: number, tz: number): number =>
+      d.height[clampTile(tz) * N + clampTile(tx)];
+    const flowAt = (tx: number, tz: number): number =>
+      d.flow[clampTile(tz) * N + clampTile(tx)];
 
-    const waterAt = (tx: number, tz: number): number => {
-      const x = tx < 0 ? 0 : tx >= N ? N - 1 : tx;
-      const z = tz < 0 ? 0 : tz >= N ? N - 1 : tz;
-      return t.waterHeight[z * N + x];
-    };
-    const groundAt = (tx: number, tz: number): number => {
-      const x = tx < 0 ? 0 : tx >= N ? N - 1 : tx;
-      const z = tz < 0 ? 0 : tz >= N ? N - 1 : tz;
-      return d.height[z * N + x];
-    };
+    const positions = new Float32Array(side * side * 3);
+    const depths = new Float32Array(side * side);
+    const flows = new Float32Array(side * side);
+    const wetVertex = new Uint8Array(side * side);
 
-    const push = (x: number, y: number, z: number, hex: number): void => {
-      positions.push(x, y, z);
-      tmp.setHex(hex);
-      colors.push(tmp.r, tmp.g, tmp.b);
-    };
+    for (let vz = 0; vz < side; vz++) {
+      for (let vx = 0; vx < side; vx++) {
+        const tx = baseX + vx * step;
+        const tz = baseZ + vz * step;
+        const vi = vz * side + vx;
 
-    for (let qz = 0; qz < quads; qz++) {
-      for (let qx = 0; qx < quads; qx++) {
-        const tx = baseX + qx * step;
-        const tz = baseZ + qz * step;
-
-        // A quad is wet if any corner tile carries water.
-        let level = NO_WATER;
+        // The level here is the mean of the wet tiles that meet at this point.
+        // Averaging rather than taking the highest keeps a pond from climbing
+        // the bank it sits against.
+        let sum = 0;
         let wet = 0;
-        for (let k = 0; k < 4; k++) {
-          const sx = tx + (k & 1 ? step : 0);
-          const sz = tz + (k & 2 ? step : 0);
-          const w = waterAt(sx, sz);
-          if (w > NO_WATER) {
-            wet++;
-            if (w > level) level = w;
+        for (let oz = -1; oz <= 0; oz++) {
+          for (let ox = -1; ox <= 0; ox++) {
+            const w = waterAt(tx + ox * step, tz + oz * step);
+            if (w > NO_WATER) {
+              sum += w;
+              wet++;
+            }
           }
         }
-        if (wet === 0) continue;
+        const ground = groundAt(tx, tz);
+        const level = wet > 0 ? sum / wet : ground;
+        wetVertex[vi] = wet > 0 ? 1 : 0;
 
-        const mi = Math.min(N - 1, tz + (step >> 1)) * N + Math.min(N - 1, tx + (step >> 1));
-        const flowing = d.flow[mi] > 0.42 && level > 0.4;
-
-        const x0 = tx * ts;
-        const z0 = tz * ts;
-        const x1 = (tx + step) * ts;
-        const z1 = (tz + step) * ts;
-
-        const depth = level - (groundAt(tx, tz) + groundAt(tx + step, tz) + groundAt(tx, tz + step) + groundAt(tx + step, tz + step)) * 0.25;
-        const hex = waterColor(Math.max(0, depth), flowing);
-
-        push(x0, level, z0, hex);
-        push(x0, level, z1, hex);
-        push(x1, level, z1, hex);
-        push(x0, level, z0, hex);
-        push(x1, level, z1, hex);
-        push(x1, level, z0, hex);
+        positions[vi * 3] = tx * ts;
+        positions[vi * 3 + 1] = level;
+        positions[vi * 3 + 2] = tz * ts;
+        depths[vi] = Math.max(0, level - ground);
+        flows[vi] = clamp01((flowAt(tx, tz) - 0.35) * 2.2);
       }
     }
 
-    if (positions.length === 0) return null;
+    // Only the quads that actually hold water get triangles. A quad touching
+    // the bank is kept, which is what gives the shader a thin edge to foam.
+    const indices: number[] = [];
+    for (let qz = 0; qz < quads; qz++) {
+      for (let qx = 0; qx < quads; qx++) {
+        const a = qz * side + qx;
+        const b = a + 1;
+        const cIdx = a + side;
+        const dIdx = cIdx + 1;
+        if (!wetVertex[a] && !wetVertex[b] && !wetVertex[cIdx] && !wetVertex[dIdx]) continue;
+        indices.push(a, cIdx, dIdx, a, dIdx, b);
+      }
+    }
+    if (indices.length === 0) return null;
+
     const geo = new BufferGeometry();
-    geo.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-    geo.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
-    geo.computeVertexNormals();
+    geo.setAttribute('position', new BufferAttribute(positions, 3));
+    geo.setAttribute('aDepth', new BufferAttribute(depths, 1));
+    geo.setAttribute('aFlow', new BufferAttribute(flows, 1));
+    geo.setIndex(indices);
     return geo;
   }
 
-  /** Cheap vertex ripple so water is not a dead flat plane. */
-  private applyWaterWaves(mat: MeshLambertMaterial): void {
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = this.waterTimeUniform;
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;')
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-           float w = sin(position.x * 0.28 + uTime * 1.1) * 0.055
-                   + sin(position.z * 0.21 - uTime * 0.83) * 0.045
-                   + sin((position.x + position.z) * 0.11 + uTime * 0.5) * 0.03;
-           transformed.y += w;`,
-        );
-    };
+  /**
+   * The water is lit by the same sun everything else is, so it has to be told
+   * where the sun is and what colour the sky has gone.
+   */
+  setSunlight(direction: Vector3, sunColour: Color, skyColour: Color, night: number): void {
+    this.waterUniforms.uSunDir.value.copy(direction);
+    this.waterUniforms.uSunColor.value.copy(sunColour);
+    this.waterUniforms.uSkyColor.value.copy(skyColour);
+    this.waterUniforms.uNight.value = night;
   }
 
   dispose(): void {

@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { buildTestWorld, makeTestConfig, run, runAir } from './harness';
 import type { HazardKind } from '../sim/DisasterDirector';
 import type { World } from '../sim/World';
@@ -56,7 +57,7 @@ describe('hazard risk', () => {
 
   it('never fires a hazard in the first days of a settlement', () => {
     const world = buildTestWorld();
-    run(world, 24 * 12 * 2);
+    run(world, 24 * SECONDS_PER_GAME_HOUR * 2);
     expect(world.director.history.length).toBe(0);
   });
 

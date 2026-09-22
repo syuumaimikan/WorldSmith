@@ -7,10 +7,18 @@ interface Props {
   onResume: () => void;
   onSave: () => Promise<void>;
   onSettings: () => void;
+  onTimeSkip: () => void;
   onExit: () => void;
 }
 
-export function PausePanel({ worldName, onResume, onSave, onSettings, onExit }: Props): JSX.Element {
+export function PausePanel({
+  worldName,
+  onResume,
+  onSave,
+  onSettings,
+  onTimeSkip,
+  onExit,
+}: Props): JSX.Element {
   const t = useT();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
@@ -36,6 +44,9 @@ export function PausePanel({ worldName, onResume, onSave, onSettings, onExit }: 
         </button>
         <button className="btn" onClick={() => void save()} disabled={saving}>
           {saving ? t('pause.saving') : t('pause.save')}
+        </button>
+        <button className="btn" onClick={onTimeSkip}>
+          {t('skip.title')}
         </button>
         <button className="btn" onClick={onSettings}>
           {t('menu.settings')}

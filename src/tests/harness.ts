@@ -7,6 +7,7 @@
  */
 
 import { generateTerrain } from '../world/TerrainGen';
+import { SECONDS_PER_GAME_HOUR } from '../sim/Time';
 import { populateWorld } from '../world/WorldPopulate';
 import { Terrain, OVERLAY } from '../world/Terrain';
 import { TerrainData, WorldConfig } from '../world/types';
@@ -75,7 +76,7 @@ export function runAir(world: World, days: number): void {
   const STEP = 0.25; // game hours, matching the world's own cadence
   const steps = Math.round((days * 24) / STEP);
   for (let i = 0; i < steps; i++) {
-    world.time.advance(STEP * 12);
+    world.time.advance(STEP * SECONDS_PER_GAME_HOUR);
     world.stepAtmosphere(STEP);
     world.weather.driveFrom(world.climate, world.player.position.x, world.player.position.z, STEP);
   }
@@ -92,7 +93,7 @@ export function runRock(world: World, days: number): void {
   let left = days;
   while (left > 0) {
     const step = Math.min(STEP_DAYS, left);
-    world.time.advance(step * 24 * 12);
+    world.time.advance(step * 24 * SECONDS_PER_GAME_HOUR);
     world.tectonics.update(world, step * 24);
     left -= step;
   }
