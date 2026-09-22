@@ -13,7 +13,73 @@ interface Props {
   onClose: () => void;
 }
 
-type MapMode = 'terrain' | 'biome' | 'resources' | 'fertility';
+type MapMode =
+  | 'terrain'
+  | 'biome'
+  | 'resources'
+  | 'fertility'
+  | 'political'
+  | 'faith'
+  | 'knowledge'
+  | 'temperature'
+  | 'rainfall'
+  | 'strain';
+
+const MAP_MODES: MapMode[] = [
+  'terrain',
+  'biome',
+  'resources',
+  'fertility',
+  'political',
+  'faith',
+  'knowledge',
+  'temperature',
+  'rainfall',
+  'strain',
+];
+
+/** Modes that read a system rather than the ground, and ignore fog of war. */
+const OVERVIEW_MODES = new Set<MapMode>([
+  'political',
+  'faith',
+  'knowledge',
+  'temperature',
+  'rainfall',
+  'strain',
+]);
+
+/**
+ * A ramp from cold to hot. Used for anything measured rather than named, so
+ * the same reading means the same colour on every map.
+ */
+function heat(t: number): number {
+  const v = clamp01(t);
+  if (v < 0.5) return mixHex(0x2b4c7e, 0x7fb069, v * 2);
+  return mixHex(0x7fb069, 0xc4553a, (v - 0.5) * 2);
+}
+
+/**
+ * A stable colour per polity or faith. The golden angle keeps neighbouring
+ * ids well apart on the wheel, so two that share a border never come out the
+ * same shade of green.
+ */
+function wheelColour(id: number): number {
+  const h = (id * 137.508) % 360;
+  const c = 0.42;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = 0.52 - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const to = (v: number): number => Math.round((v + m) * 255) & 0xff;
+  return (to(r) << 16) | (to(g) << 8) | to(b);
+}
 
 const MAP_SIZE = 520;
 
@@ -54,14 +120,57 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
 
     const maxH = Math.max(1, t.data.maxHeight);
 
+    // Heat maps are readings, not places, so the range is taken from the
+    // world as it actually is rather than from a guessed constant.
+    let lo = Infinity;
+    let hi = -Infinity;
+    if (mode === 'temperature' || mode === 'rainfall') {
+      for (let c = 0; c < world.climate.cells * world.climate.cells; c++) {
+        const v =
+          mode === 'temperature' ? world.climate.temperature[c] : world.climate.rainfallMean[c];
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    const span = Math.max(1e-6, hi - lo);
+    const foremost = world.technology.foremost(world);
+    const topKnowledge = Math.max(1, foremost ? foremost.era.threshold + 400 : 1);
+
     for (let i = 0; i < N * N; i++) {
       let colour: number;
-      const explored = world.explored[i] === 1;
+      const explored = world.explored[i] === 1 || OVERVIEW_MODES.has(mode);
       const biome = t.data.biome[i] as Biome;
       const h = t.data.height[i];
       const water = t.waterHeight[i] > h;
 
-      if (mode === 'biome') {
+      const wx = (i % N) * t.tileSize;
+      const wz = Math.floor(i / N) * t.tileSize;
+
+      if (mode === 'political' || mode === 'faith' || mode === 'knowledge') {
+        // The land underneath, so an empty corner still reads as a map.
+        colour = water ? 0x1d3448 : 0x2f3630;
+        const owner = world.nations.nationAt(wx, wz);
+        if (owner && !water) {
+          if (mode === 'political') {
+            colour = wheelColour(owner.id);
+          } else if (mode === 'faith') {
+            const f = world.culture.faithFor(owner.id);
+            colour = f ? wheelColour(f.id * 7 + 3) : 0x3a3f46;
+          } else {
+            colour = heat(world.technology.knowledgeOf(world, owner) / topKnowledge);
+          }
+        }
+      } else if (mode === 'temperature') {
+        colour = heat((world.climate.temperatureAt(wx, wz) - lo) / span);
+      } else if (mode === 'rainfall') {
+        colour = water
+          ? PALETTE.water.deep
+          : heat((cellRain(world, wx, wz) - lo) / span);
+      } else if (mode === 'strain') {
+        colour = water
+          ? PALETTE.water.deep
+          : heat(clamp01(world.tectonics.stressAt(wx, wz)));
+      } else if (mode === 'biome') {
         colour = BIOME_COLOURS[biome] ?? PALETTE.terrain.grass;
       } else if (mode === 'fertility') {
         colour = water
@@ -83,9 +192,11 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
         }
       }
 
-      // Player-made roads show on every mode.
-      if (t.overlay[i] & (OVERLAY.Road | OVERLAY.Path)) colour = PALETTE.terrain.path;
-      if (t.overlay[i] & (OVERLAY.Field | OVERLAY.Tilled)) colour = PALETTE.terrain.farmTilled;
+      // Player-made roads show on the maps that are about the ground.
+      if (!OVERVIEW_MODES.has(mode)) {
+        if (t.overlay[i] & (OVERLAY.Road | OVERLAY.Path)) colour = PALETTE.terrain.path;
+        if (t.overlay[i] & (OVERLAY.Field | OVERLAY.Tilled)) colour = PALETTE.terrain.farmTilled;
+      }
 
       const p = i * 4;
       if (!explored) {
@@ -135,7 +246,7 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
   return (
     <Window title={t('map.title')} onClose={onClose} width="normal">
       <div className="choice-row" style={{ marginBottom: 12 }}>
-        {(['terrain', 'biome', 'resources', 'fertility'] as MapMode[]).map((m) => (
+        {MAP_MODES.map((m) => (
           <button key={m} className={`choice ${mode === m ? 'active' : ''}`} onClick={() => setMode(m)}>
             {t('map.' + m)}
           </button>
@@ -154,11 +265,7 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
               const tx = world.terrain.tileX(w.x);
               const tz = world.terrain.tileZ(w.z);
               const known = world.explored[world.terrain.index(tx, tz)] === 1;
-              setHover(
-                known
-                  ? `${biomeName(biome)} \u00b7 ${Math.round(world.terrain.heightAt(w.x, w.z))} m`
-                  : t('map.unexplored'),
-              );
+              setHover(readout(world, mode, w.x, w.z, biome, known, t));
             }}
             onMouseLeave={() => setHover('')}
             onClick={(e) => {
@@ -254,4 +361,44 @@ function resourceColour(kind: string): number {
   if (kind === 'herb_patch') return 0x7fe0a0;
   if (kind === 'reeds' || kind === 'fiber_plant' || kind === 'bush') return PALETTE.vegetation.bush;
   return PALETTE.vegetation.leafSummer;
+}
+
+/** What the map is showing under the cursor, in the language being read. */
+function readout(
+  world: Game['world'],
+  mode: MapMode,
+  x: number,
+  z: number,
+  biome: Biome,
+  known: boolean,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  if (mode === 'political' || mode === 'faith' || mode === 'knowledge') {
+    const owner = world.nations.nationAt(x, z);
+    if (!owner) return t('map.unclaimed');
+    if (mode === 'political') return owner.name;
+    if (mode === 'faith') {
+      return world.culture.faithFor(owner.id)?.name ?? t('common.none');
+    }
+    return `${owner.name} \u00b7 ${t(`era.${world.technology.eraOf(world, owner).id}`)}`;
+  }
+  if (mode === 'temperature') return `${world.climate.temperatureAt(x, z).toFixed(1)} \u00b0C`;
+  if (mode === 'rainfall') {
+    return t('map.rainReading', { mm: cellRain(world, x, z).toFixed(2) });
+  }
+  if (mode === 'strain') {
+    return t('map.strainReading', {
+      percent: Math.round(clamp01(world.tectonics.stressAt(x, z)) * 100),
+    });
+  }
+  if (!known) return t('map.unexplored');
+  return `${biomeName(biome)} \u00b7 ${Math.round(world.terrain.heightAt(x, z))} m`;
+}
+
+/** The long-run rainfall in the air cell over a point, in mm per hour. */
+function cellRain(world: Game['world'], x: number, z: number): number {
+  const c = world.climate;
+  const cx = Math.max(0, Math.min(c.cells - 1, Math.floor(x / c.cellSize)));
+  const cz = Math.max(0, Math.min(c.cells - 1, Math.floor(z / c.cellSize)));
+  return c.rainfallMean[cz * c.cells + cx];
 }

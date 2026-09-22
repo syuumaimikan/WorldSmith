@@ -123,6 +123,13 @@ export class ClimateSystem {
   readonly pressure: Float32Array;
   readonly cloud: Float32Array;
   readonly precipitation: Float32Array;
+  /**
+   * How much it rains here, as against whether it is raining here now. A
+   * running mean over a few years, which is what "a wet valley" means and
+   * what a rainfall map has to show: the instantaneous field is zero almost
+   * everywhere almost always, and a map of it is a blank one.
+   */
+  readonly rainfallMean: Float32Array;
   readonly snowpack: Float32Array;
   readonly windU: Float32Array;
   readonly windV: Float32Array;
@@ -182,6 +189,7 @@ export class ClimateSystem {
     this.pressure = new Float32Array(n).fill(BASE_PRESSURE);
     this.cloud = new Float32Array(n);
     this.precipitation = new Float32Array(n);
+    this.rainfallMean = new Float32Array(n);
     this.snowpack = new Float32Array(n);
     this.windU = new Float32Array(n);
     this.windV = new Float32Array(n);
@@ -490,6 +498,9 @@ export class ClimateSystem {
    * is how mountains get their rain and the far side gets none.
    */
   private condense(hours: number): void {
+    // Slow enough that one wet week does not redraw the rainfall map, quick
+    // enough that a change of climate eventually shows on it.
+    const memory = clamp01(hours / (24 * 200));
     for (let z = 0; z < CELLS; z++) {
       for (let x = 0; x < CELLS; x++) {
         const i = z * CELLS + x;
@@ -527,6 +538,8 @@ export class ClimateSystem {
           this.precipitation[i] *= Math.exp(-hours * 3);
           if (this.precipitation[i] < 0.02) this.precipitation[i] = 0;
         }
+
+        this.rainfallMean[i] += (this.precipitation[i] - this.rainfallMean[i]) * memory;
 
         // Convective instability: warm wet air with colder air above it.
         const instability = clamp01((this.temperature[i] - this.baseTemp[i]) * 0.1 + rh - 0.85);
@@ -909,6 +922,7 @@ export class ClimateSystem {
     field('humidity', this.humidity);
     field('pressure', this.pressure);
     field('snowpack', this.snowpack);
+    field('rainfallMean', this.rainfallMean);
     field('cloud', this.cloud);
     field('windU', this.windU);
     field('windV', this.windV);
