@@ -331,6 +331,9 @@ function HazardTab({ game }: { game: Game }): JSX.Element {
         </div>
       )}
 
+      <div className="section-label">{t('geology.title')}</div>
+      <GeologyReadout game={game} />
+
       <div className="section-label">{t('risk.health')}</div>
       <div className="stat-grid">
         <Reading label={t('risk.ill')} value={String(world.disease.activeCases)} />
@@ -354,6 +357,45 @@ function HazardTab({ game }: { game: Game }): JSX.Element {
             cases: world.disease.liveOutbreak.infections.size,
             deaths: world.disease.liveOutbreak.deaths,
           })}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** What the rock under the settlement is doing. */
+function GeologyReadout({ game }: { game: Game }): JSX.Element {
+  const t = useT();
+  const world = game.world;
+  const tec = world.tectonics;
+  const here = world.settlement.centre;
+  const plate = tec.plateAt(here.x, here.z);
+  const worst = tec.mostStressed();
+  const quiet =
+    worst && worst.lastRupture >= 0
+      ? t('geology.daysAgo', { days: Math.max(0, world.time.totalDays - worst.lastRupture) })
+      : t('geology.never');
+
+  return (
+    <>
+      <div className="stat-grid">
+        <Reading
+          label={t('geology.plate')}
+          value={plate ? plate.name : '—'}
+        />
+        <Reading
+          label={t('geology.plates')}
+          value={`${tec.plates.length} (${tec.plates.filter((p) => p.oceanic).length} ${t('geology.oceanic').toLowerCase()})`}
+        />
+        <Reading
+          label={t('geology.strain')}
+          value={`${Math.round(tec.stressAt(here.x, here.z) * 100)} %`}
+        />
+        <Reading label={t('geology.quiet')} value={quiet} />
+      </div>
+      {worst && (
+        <div className="tiny muted" style={{ marginTop: 6 }}>
+          {t('geology.nextFault')}: {t(`geology.boundary.${worst.kind}`)}
         </div>
       )}
     </>

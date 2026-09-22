@@ -81,6 +81,23 @@ export function runAir(world: World, days: number): void {
   }
 }
 
+/**
+ * Runs `days` of geology and nothing else.
+ *
+ * Plates move on their own clock and do not care what the weather is doing,
+ * so an age of drift costs almost nothing to simulate this way.
+ */
+export function runRock(world: World, days: number): void {
+  const STEP_DAYS = 30;
+  let left = days;
+  while (left > 0) {
+    const step = Math.min(STEP_DAYS, left);
+    world.time.advance(step * 24 * 12);
+    world.tectonics.update(world, step * 24);
+    left -= step;
+  }
+}
+
 /** Finds the first legal placement for a building near a point. */
 export function placeNear(
   world: World,

@@ -93,6 +93,8 @@ export class DisasterDirector {
     if (this.elapsed < GRACE_HOURS) return;
 
     for (const risk of this.risks.values()) {
+      // Earthquakes belong to the faults; the director only reports them.
+      if (risk.kind === 'earthquake') continue;
       if (risk.risk < 0.55) continue;
       const since = this.quiet.get(risk.kind) ?? 1e6;
       if (since < minimumGap(risk.kind)) continue;
@@ -147,6 +149,14 @@ export class DisasterDirector {
       const steep = world.steepGroundFraction();
       set('landslide', wet * 0.7 * clamp01(steep * 3), 'cause.saturatedSlopes');
     }
+
+    // --- earthquake: strain along the faults -----------------------------
+    // Read straight off the rock. The faults fire their own ruptures when
+    // they break; this is only so the player can see it coming.
+    // Strain under the settlement, not the highest anywhere: with a hundred
+    // fault segments something is always close to going somewhere.
+    const centre = world.settlement.centre;
+    set('earthquake', world.tectonics.stressAt(centre.x, centre.z), 'cause.faultStrain');
 
     // --- eruption: pressure under a volcano ------------------------------
     {

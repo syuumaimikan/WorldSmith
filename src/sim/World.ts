@@ -42,6 +42,7 @@ import { TerrainEditor } from '../world/TerrainEdit';
 import { DisasterManager } from './Disasters';
 import { DisasterDirector } from './DisasterDirector';
 import { DiseaseSystem } from './Disease';
+import { Tectonics } from './Tectonics';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
@@ -113,6 +114,7 @@ export class World {
   readonly editor: TerrainEditor;
   readonly disasters: DisasterManager;
   readonly director: DisasterDirector;
+  readonly tectonics: Tectonics;
   readonly disease: DiseaseSystem;
   /**
    * How hard the settlement is rationing, 0 when there is plenty. A famine is
@@ -169,13 +171,16 @@ export class World {
     this.nav = new Navigation(terrain);
     this.explored = new Uint8Array(terrain.gridSize * terrain.gridSize);
     this.weather = new WeatherSystem(config.seed, config.climate);
+    this.namer = new Namer(config.seed);
     this.climate = new ClimateSystem(terrain, config.seed, config.climate);
     this.storms = new StormSystem(config.seed);
-    this.namer = new Namer(config.seed);
     this.settlement = new Settlement(config.name, startX, startZ);
     this.editor = new TerrainEditor(terrain);
     this.disasters = new DisasterManager(config.seed);
     this.director = new DisasterDirector(config.seed);
+    this.tectonics = new Tectonics(terrain, config.seed, (i) =>
+      this.namer.featureName('region', `plate${i}`),
+    );
     this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
@@ -1677,6 +1682,7 @@ export class World {
   stepAtmosphere(hours: number): void {
     this.climate.update(this.time, hours);
     this.storms.update(this, hours);
+    this.tectonics.update(this, hours);
     this.director.update(this, hours);
     this.disease.update(this, hours);
     this.updateFamine(hours);
