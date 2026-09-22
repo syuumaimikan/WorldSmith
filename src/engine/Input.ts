@@ -29,6 +29,9 @@ export type Action =
   | 'speedUp'
   | 'debug'
   | 'cameraMode'
+  | 'godMode'
+  | 'ascend'
+  | 'descend'
   | 'cancel';
 
 export const DEFAULT_BINDINGS: Record<Action, string[]> = {
@@ -55,6 +58,9 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   speedUp: ['BracketRight'],
   debug: ['F1'],
   cameraMode: ['KeyV'],
+  godMode: ['KeyG'],
+  ascend: ['KeyQ'],
+  descend: ['KeyZ'],
   cancel: ['Escape'],
 };
 
@@ -82,6 +88,9 @@ export const ACTION_LABELS: Record<Action, string> = {
   speedUp: 'Faster',
   debug: 'Debug panel',
   cameraMode: 'Camera mode',
+  godMode: 'God mode',
+  ascend: 'Ascend',
+  descend: 'Descend',
   cancel: 'Cancel',
 };
 

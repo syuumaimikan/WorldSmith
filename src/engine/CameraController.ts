@@ -10,7 +10,7 @@ import { PerspectiveCamera, Vector3 } from 'three';
 import { clamp, damp, dampAngle, TAU } from '../core/math';
 import { Terrain } from '../world/Terrain';
 
-export type CameraMode = 'third' | 'first' | 'build' | 'overview';
+export type CameraMode = 'third' | 'first' | 'build' | 'overview' | 'god';
 
 const MIN_PITCH = -1.35;
 const MAX_PITCH = 0.62;
@@ -37,6 +37,11 @@ export class CameraController {
 
   /** Free-look pan offset used in build and overview modes. */
   private panOffset = new Vector3();
+  /** Absolute camera position while flying in god mode. */
+  readonly godPosition = new Vector3();
+  private godVelocity = new Vector3();
+  private forward = new Vector3();
+  private right = new Vector3();
 
   constructor(aspect: number) {
     this.camera = new PerspectiveCamera(55, aspect, 0.25, 4000);
@@ -76,6 +81,13 @@ export class CameraController {
         this.pitch = -1.05;
         this.camera.fov = 45;
         break;
+      case 'god':
+        // Free flight starts just above the player and can climb to a view of
+        // the whole continent.
+        this.camera.fov = 52;
+        this.godPosition.copy(this.camera.position);
+        this.pitch = clamp(this.pitch, MIN_PITCH, -0.15);
+        break;
     }
     this.camera.updateProjectionMatrix();
   }
@@ -88,7 +100,47 @@ export class CameraController {
     if (this.yaw < -Math.PI) this.yaw += TAU;
   }
 
+  /**
+   * Flies the god camera. Movement scales with altitude, so the same controls
+   * work whether you are inspecting a doorway or looking at a whole coastline.
+   */
+  flyGod(forwardAxis: number, rightAxis: number, upAxis: number, fast: boolean, dt: number): void {
+    const groundY = this.terrain ? this.terrain.heightAt(this.godPosition.x, this.godPosition.z) : 0;
+    const altitude = Math.max(2, this.godPosition.y - groundY);
+    const speed = altitude * (fast ? 3.2 : 1.1) + 12;
+
+    this.forward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    this.right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+
+    this.godVelocity.set(0, 0, 0);
+    this.godVelocity.addScaledVector(this.forward, forwardAxis * speed);
+    this.godVelocity.addScaledVector(this.right, rightAxis * speed);
+    this.godVelocity.y += upAxis * speed;
+
+    this.godPosition.addScaledVector(this.godVelocity, dt);
+
+    if (this.terrain) {
+      const size = this.terrain.worldSize;
+      this.godPosition.x = clamp(this.godPosition.x, -size * 0.2, size * 1.2);
+      this.godPosition.z = clamp(this.godPosition.z, -size * 0.2, size * 1.2);
+      const floor = this.terrain.heightAt(this.godPosition.x, this.godPosition.z) + 2.5;
+      this.godPosition.y = clamp(this.godPosition.y, floor, size * 1.6);
+    }
+  }
+
+  /** Altitude above the ground, used to pick simulation and render detail. */
+  godAltitude(): number {
+    const groundY = this.terrain ? this.terrain.heightAt(this.godPosition.x, this.godPosition.z) : 0;
+    return Math.max(0, this.godPosition.y - groundY);
+  }
+
   zoom(steps: number): void {
+    if (this.mode === 'god') {
+      // The wheel changes altitude directly rather than an orbit distance.
+      const alt = this.godAltitude();
+      this.godPosition.y -= steps * Math.max(4, alt * 0.22);
+      return;
+    }
     const min = this.mode === 'build' ? 8 : this.mode === 'overview' ? 30 : 2.2;
     const max = this.mode === 'build' ? 90 : this.mode === 'overview' ? 320 : 24;
     const factor = Math.pow(1.16, steps);
@@ -122,6 +174,17 @@ export class CameraController {
   }
 
   update(dt: number, target: Vector3, instant = false): void {
+    if (this.mode === 'god') {
+      this.camera.position.copy(this.godPosition);
+      const cp = Math.cos(this.pitch);
+      this.camera.lookAt(
+        this.godPosition.x - Math.sin(this.yaw) * cp,
+        this.godPosition.y + Math.sin(this.pitch),
+        this.godPosition.z - Math.cos(this.yaw) * cp,
+      );
+      return;
+    }
+
     this.focus.copy(target).add(this.panOffset);
 
     const lambda = instant ? 1000 : 14;

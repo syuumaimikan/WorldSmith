@@ -667,6 +667,11 @@ export const ja: Record<string, string> = {
   'talk.foodShort': '食料が心細くなってきた。',
   'talk.homeless': 'まだ自分の屋根がない。',
 
+  'ev.droughtBegins': '雨が止んだ。大地が乾いていく。',
+  'ev.settlersArrive': '入植者{count}人が到着した。',
+  'event.eruptionEnds': '{name}は再び静まった。',
+  'memory.possessed': '何かが私を動かした。自分で選んだ覚えはない。',
+
   // --------------------------------------------------------------- generic
   'common.close': '閉じる',
   'common.cancel': 'キャンセル',

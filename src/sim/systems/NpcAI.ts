@@ -40,6 +40,15 @@ const RECONSIDER_TICKS = 40;
 
 export function updateNpc(world: World, npc: Npc, dt: number): void {
   updateNeeds(world, npc, dt);
+
+  // A settler the player has taken over still gets hungry and tired, but the
+  // player decides what they do. Their AI resumes the moment control is let go.
+  if (world.possessed === npc.id) {
+    npc.y = world.terrain.heightAt(npc.x, npc.z);
+    npc.updateMood();
+    return;
+  }
+
   maybeReconsider(world, npc);
 
   if (npc.task.type === 'none') {
@@ -390,6 +399,13 @@ function executeTask(world: World, npc: Npc, dt: number): void {
     case 'wander':
       if (arriveAt(world, npc, task.x, task.z)) npc.clearTask();
       else npc.activity = 'walking';
+      break;
+    case 'flee':
+      // Running from a fire or a quake overrides everything until they are
+      // clear of it, which is why this task is not interruptible.
+      npc.activity = 'walking';
+      npc.speed = Math.max(npc.speed, NPC_WALK_SPEED * 1.9);
+      if (arriveAt(world, npc, task.x, task.z, 2.5) || task.attempts > 400) npc.clearTask();
       break;
     case 'deliver_carried':
       executeDeliverCarried(world, npc);

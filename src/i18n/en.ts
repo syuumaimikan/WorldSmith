@@ -667,6 +667,11 @@ export const en: Record<string, string> = {
   'talk.foodShort': "Food's getting thin, mind.",
   'talk.homeless': 'Still no roof of my own.',
 
+  'ev.droughtBegins': 'The rains have stopped. The ground is drying out.',
+  'ev.settlersArrive': '{count} settlers arrive.',
+  'event.eruptionEnds': '{name} falls quiet again.',
+  'memory.possessed': 'Something moved me. I do not remember choosing it.',
+
   // --------------------------------------------------------------- generic
   'common.close': 'Close',
   'common.cancel': 'Cancel',

@@ -20,6 +20,7 @@ export const OVERLAY = {
   Floor: 1 << 4,
   Reserved: 1 << 5,
   Trampled: 1 << 6,
+  Burnt: 1 << 7,
 } as const;
 
 export class Terrain {

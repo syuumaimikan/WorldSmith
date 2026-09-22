@@ -34,7 +34,10 @@ import { applyToolWork, findTarget, interact, InteractTarget } from './PlayerAct
 import { BuildingId } from '../data/buildings';
 import { Overlay, OverlayRenderer } from '../render/OverlayRenderer';
 import { AudioEngine } from '../audio/AudioEngine';
+import { GodMode } from './GodMode';
+import { BrushPreview } from '../render/BrushPreview';
 import { t } from '../i18n';
+import { professionColour, ProfessionId } from '../data/professions';
 import type { WeatherKind } from '../sim/Weather';
 
 const SIM_TICK = 1 / 15;
@@ -75,6 +78,11 @@ export interface HudSnapshot {
   target: InteractTarget;
   placement: PlacementState | null;
   cameraMode: CameraMode;
+  godActive: boolean;
+  godPower: string | null;
+  godRadius: number;
+  godStrength: number;
+  possessedName: string | null;
   fps: number;
   drawCalls: number;
   triangles: number;
@@ -98,6 +106,8 @@ export class Game {
   readonly overlays: OverlayRenderer;
   readonly build: BuildController;
   readonly audio: AudioEngine;
+  readonly god: GodMode;
+  readonly brush: BrushPreview;
 
   settings: GameSettings;
   /** Set by the UI when a modal panel wants exclusive keyboard input. */
@@ -164,6 +174,8 @@ export class Game {
     this.overlays = new OverlayRenderer(this.scene, world);
     this.build = new BuildController(this.scene, world, season);
     this.audio = new AudioEngine(settings.masterVolume);
+    this.god = new GodMode(world);
+    this.brush = new BrushPreview(this.scene);
 
     const look = lookFor(PALETTE.cloak.player, world.config.seed, PALETTE.cloak.playerTrim);
     this.playerRig = new CharacterRig(look, this.charMaterial);
@@ -194,6 +206,11 @@ export class Game {
       target: this.currentTarget,
       placement: null,
       cameraMode: 'third',
+      godActive: false,
+      godPower: null,
+      godRadius: 30,
+      godStrength: 0.5,
+      possessedName: null,
       fps: 0,
       drawCalls: 0,
       triangles: 0,
@@ -297,6 +314,7 @@ export class Game {
       }
       if (input.wasPressed('rotate') && this.build.isPlacing) this.build.rotate();
       if (input.wasPressed('overlayCycle')) this.overlays.cycle();
+      if (input.wasPressed('godMode')) this.toggleGodMode();
     }
 
     // Movement relative to the camera's ground heading.
@@ -308,6 +326,24 @@ export class Game {
       if (input.isDown('moveBack')) this.wishDir.sub(this.camForward);
       if (input.isDown('moveRight')) this.wishDir.add(this.camRight);
       if (input.isDown('moveLeft')) this.wishDir.sub(this.camRight);
+    }
+
+    // God mode flies the camera with the same keys, plus Q/E for altitude.
+    if (this.god.active && !this.god.possessed) {
+      const up = (input.isDown('ascend') ? 1 : 0) - (input.isDown('descend') ? 1 : 0);
+      let fwd = 0;
+      let rgt = 0;
+      if (free) {
+        if (input.isDown('moveForward')) fwd += 1;
+        if (input.isDown('moveBack')) fwd -= 1;
+        if (input.isDown('moveRight')) rgt += 1;
+        if (input.isDown('moveLeft')) rgt -= 1;
+      }
+      this.cameras.flyGod(fwd, rgt, up, input.isDown('run'), dt);
+      this.wishDir.set(0, 0, 0);
+      this.updateGodCursor();
+      if (free) this.handleGodClicks();
+      return;
     }
 
     // In build and overview modes the camera pans instead of the player moving.
@@ -371,15 +407,24 @@ export class Game {
     }
   }
 
-  private pickUnderCursor(): void {
+  /** Ground point under the mouse, or null if the ray leaves the world. */
+  private rayToGround(): { x: number; y: number; z: number } | null {
     const cam = this.cameras.camera;
     cam.getWorldPosition(this.pickOrigin);
-    this.pickDir.set(this.input.ndcX, this.input.ndcY, 0.5).unproject(cam).sub(this.pickOrigin).normalize();
-    const hit = this.world.terrain.raycast(
+    this.pickDir
+      .set(this.input.ndcX, this.input.ndcY, 0.5)
+      .unproject(cam)
+      .sub(this.pickOrigin)
+      .normalize();
+    return this.world.terrain.raycast(
       this.pickOrigin.x, this.pickOrigin.y, this.pickOrigin.z,
       this.pickDir.x, this.pickDir.y, this.pickDir.z,
-      700,
+      4000,
     );
+  }
+
+  private pickUnderCursor(): void {
+    const hit = this.rayToGround();
     if (!hit) return;
 
     let bestKind: 'npc' | 'building' | 'node' | null = null;
@@ -420,6 +465,106 @@ export class Game {
     this.world.selection = bestKind ? { kind: bestKind, id: bestId } : null;
   }
 
+  /** Where the god cursor is pointing, and the brush ring that shows it. */
+  private updateGodCursor(): void {
+    const hit = this.rayToGround();
+    this.god.cursorValid = hit !== null;
+    if (hit) this.god.cursor.set(hit.x, hit.y, hit.z);
+    const power = this.god.currentPower;
+    this.brush.update(
+      this.god.active && !!power && !power.global && this.god.cursorValid,
+      this.god.cursor,
+      this.god.radius,
+      this.world.terrain,
+    );
+  }
+
+  private handleGodClicks(): void {
+    const input = this.input;
+    const power = this.god.currentPower;
+
+    if (power?.global) {
+      if (input.mousePressed(0) && input.overViewport) this.fireGodPower(0, 0);
+      return;
+    }
+
+    if (power && this.god.cursorValid) {
+      const held = power.continuous ? input.mouseDown(0) : input.mousePressed(0);
+      if (held && input.overViewport) {
+        this.fireGodPower(this.god.cursor.x, this.god.cursor.z);
+      }
+      return;
+    }
+
+    // With no power selected, clicking inspects and picks a target to possess.
+    if (input.mousePressed(0) && input.overViewport) this.pickUnderCursor();
+  }
+
+  private fireGodPower(x: number, z: number): void {
+    const id = this.god.apply(x, z);
+    if (!id) return;
+    this.toast(t('god.applied', { power: t(`god.power.${id}`) }));
+    this.audio.play(id === 'earthquake' || id === 'meteor' ? 'mine' : 'place');
+    // Terrain edits invalidate the vegetation and navigation caches.
+    this.vegetation.markDirty();
+  }
+
+  toggleGodMode(): void {
+    if (this.god.active) {
+      this.god.release();
+      this.god.active = false;
+      this.god.selectPower(null);
+      this.cameras.setMode('third');
+      this.cameras.snap(this.focusPoint);
+    } else {
+      this.god.active = true;
+      // Start the flight just above and behind where the player is standing.
+      this.cameras.godPosition.copy(this.cameras.camera.position);
+      this.cameras.godPosition.y += 12;
+      this.cameras.setMode('god');
+    }
+  }
+
+  /** Takes over the settler currently selected. */
+  possessSelected(): boolean {
+    const sel = this.world.selection;
+    if (!sel || sel.kind !== 'npc') return false;
+    const npc = this.world.npcById.get(sel.id);
+    if (!npc) return false;
+    this.god.possess(npc);
+    this.god.selectPower(null);
+    this.world.player.position.set(npc.x, npc.y, npc.z);
+    this.world.player.velocity.set(0, 0, 0);
+    this.world.player.yaw = npc.yaw;
+    this.cameras.setMode('third');
+    this.world.player.focusPoint(this.focusPoint);
+    this.cameras.snap(this.focusPoint);
+    this.rebuildPlayerLook(npc.profession);
+    return true;
+  }
+
+  releasePossession(): void {
+    if (!this.god.possessed) return;
+    this.god.release();
+    this.rebuildPlayerLook(null);
+    if (this.god.active) {
+      this.cameras.godPosition.copy(this.cameras.camera.position);
+      this.cameras.godPosition.y += 10;
+      this.cameras.setMode('god');
+    }
+  }
+
+  /** Swaps the player body to a possessed settler's cloak, or back again. */
+  private rebuildPlayerLook(profession: ProfessionId | null): void {
+    const cloak = profession ? professionColour(profession) : PALETTE.cloak.player;
+    const trim = profession ? undefined : PALETTE.cloak.playerTrim;
+    const look = lookFor(cloak, this.world.config.seed, trim);
+    this.scene.remove(this.playerRig.root);
+    this.playerRig.dispose();
+    this.playerRig = new CharacterRig(look, this.charMaterial);
+    this.scene.add(this.playerRig.root);
+  }
+
   private updatePlayer(dt: number): void {
     const player = this.world.player;
     const run = !this.uiCapturesInput && this.input.isDown('run');
@@ -430,6 +575,26 @@ export class Game {
 
     if (player.wading && player.speed > 1.5 && Math.random() < dt * 8) {
       this.particles.emit('splash', player.position.x, player.position.y + 0.1, player.position.z, 3);
+    }
+
+    // A possessed settler's body follows the controls; everything about them
+    // that the simulation cares about stays theirs.
+    const host = this.god.possessedNpc;
+    if (host) {
+      host.x = player.position.x;
+      host.z = player.position.z;
+      host.y = player.position.y;
+      host.yaw = player.yaw;
+      host.speed = player.speed;
+      host.activity = player.busyAction
+        ? player.busyAction === 'chop'
+          ? 'chopping'
+          : player.busyAction === 'mine'
+            ? 'mining'
+            : 'farming'
+        : player.speed > 0.2
+          ? 'walking'
+          : 'idle';
     }
 
     this.discoveryTimer += dt;
@@ -470,6 +635,18 @@ export class Game {
 
   get overlay(): Overlay {
     return this.overlays.current;
+  }
+
+  /** Points the god camera at a place without moving the player. */
+  lookAt(x: number, z: number): void {
+    if (this.cameras.mode !== 'god') {
+      this.focusOn(x, z);
+      return;
+    }
+    const alt = Math.max(40, this.cameras.godAltitude());
+    this.cameras.godPosition.set(x, this.world.terrain.heightAt(x, z) + alt, z + alt * 0.7);
+    this.cameras.pitch = -0.85;
+    this.vegetation.markDirty();
   }
 
   /** Moves the camera and player focus to a world position, used by the map. */
@@ -533,11 +710,14 @@ export class Game {
     const nightFactor = 1 - this.sky.daylight;
     this.buildingRenderer.update(world, camPos, nightFactor);
     this.pileRenderer.update(world.piles, camPos);
+    this.npcRenderer.setHidden(this.god.possessed);
     this.npcRenderer.update(world.npcs, camPos, dt);
     this.wildlifeRenderer.update(world.wildlife, camPos, dt);
     this.overlays.update(camPos, dt);
 
     this.emitAmbientEffects(dt, nightFactor);
+    this.god.tick(dt);
+    this.emitFireEffects(dt);
     this.particles.update(dt);
     this.audio.update(world, this.sky.daylight, dt);
 
@@ -614,6 +794,21 @@ export class Game {
     }
   }
 
+  /** Flame and smoke above every active fire. */
+  private emitFireEffects(dt: number): void {
+    const camPos = this.cameras.camera.position;
+    for (const f of this.world.disasters.fires) {
+      if (Math.hypot(f.x - camPos.x, f.z - camPos.z) > 220) continue;
+      const y = this.world.terrain.heightAt(f.x, f.z);
+      if (Math.random() < dt * 22 * f.intensity) {
+        this.particles.emit('sparks', f.x, y + 0.5, f.z, 2);
+      }
+      if (Math.random() < dt * 9) {
+        this.particles.emit('smoke', f.x, y + 1.6, f.z, 1);
+      }
+    }
+  }
+
   private applySeason(season: Season): void {
     this.tint = {
       season,
@@ -643,6 +838,11 @@ export class Game {
       this.world.time.seasonalTemperatureOffset();
     h.target = this.currentTarget;
     h.cameraMode = this.cameras.mode;
+    h.godActive = this.god.active;
+    h.godPower = this.god.selectedPower;
+    h.godRadius = this.god.radius;
+    h.godStrength = this.god.strength;
+    h.possessedName = this.god.possessedNpc?.name ?? null;
     h.fps = this.renderer.stats.fps;
     h.drawCalls = this.renderer.stats.drawCalls;
     h.triangles = this.renderer.stats.triangles;
@@ -663,6 +863,7 @@ export class Game {
   dispose(): void {
     this.stop();
     this.input.detach();
+    this.brush.dispose();
     this.build.dispose();
     this.overlays.dispose();
     this.particles.dispose();

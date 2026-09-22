@@ -114,6 +114,12 @@ export function groundColor(
     c = mixHex(c, PALETTE.terrain.sand, smoothstep(1.2, -0.2, height) * 0.75);
   }
 
+  // Fire scars. They fade as fertility recovers, but for now the ground is
+  // visibly burnt.
+  if (overlay & OVERLAY.Burnt) {
+    c = mixHex(c, 0x2e2822, 0.62);
+  }
+
   // Desire paths worn in by foot traffic.
   if (traffic > 0) {
     c = mixHex(c, PALETTE.terrain.path, clamp01(traffic / 200) * 0.7);

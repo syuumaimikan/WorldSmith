@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Game, GameSettings, HudSnapshot } from '../game/Game';
 import { World } from '../sim/World';
 import { Hud, PanelId } from './hud/Hud';
+import { GodPanel } from './hud/GodPanel';
 import { BuildPanel } from './panels/BuildPanel';
 import { InventoryPanel } from './panels/InventoryPanel';
 import { SettlementPanel } from './panels/SettlementPanel';
@@ -152,6 +153,11 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
           e.preventDefault();
           setShowDebug((v) => !v);
           break;
+        case 'KeyG':
+          // The game itself toggles god mode; this only nudges React to
+          // re-render the panel on the same frame.
+          setPanel('none');
+          break;
         case 'Escape': {
           const g = gameRef.current;
           if (showSettings) setShowSettings(false);
@@ -206,6 +212,10 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
             tutorialDismissed={tutorialDismissed}
             onDismissTutorial={() => setTutorialDismissed(true)}
           />
+
+          {hud.godActive && (
+            <GodPanel game={game} hud={hud} onExit={() => game.toggleGodMode()} />
+          )}
 
           {panel === 'build' && <BuildPanel game={game} onClose={closePanel} />}
           {panel === 'inventory' && <InventoryPanel game={game} onClose={closePanel} />}

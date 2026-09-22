@@ -50,6 +50,14 @@ export class Building {
   demolishWork = 0;
   /** 1 = new, decays with use and weather. */
   condition = 1;
+  /**
+   * Set when damage has dropped the building below a usable state. Repair is
+   * handled as construction work so it reuses builders, the job board and the
+   * same visible on-site progress.
+   */
+  repairNeeded = false;
+  /** Work put into the current repair. */
+  repairWork = 0;
 
   /** Finished-building store (workshop inputs/outputs, warehouse contents). */
   readonly inventory: Inventory;
@@ -284,8 +292,14 @@ export class Building {
     return this.def.name;
   }
 
+  /** Total labour to bring a damaged building back to full condition. */
+  get repairWorkRequired(): number {
+    return this.def.totalWork * 0.35 * (1 - this.condition);
+  }
+
   statusText(): string {
     if (this.demolishing) return 'Being demolished';
+    if (this.repairNeeded) return 'Awaiting repair';
     if (this.complete) {
       if (this.paused) return 'Paused';
       if (this.def.workSlots > 0 && this.workerIds.length === 0) return 'No workers';

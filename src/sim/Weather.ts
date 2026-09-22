@@ -58,6 +58,15 @@ export class WeatherSystem {
   private rng: Rng;
   private climate: ClimatePreset;
 
+  /**
+    * Prevailing wind, in radians. Fire spread, cloud drift, smoke and sailing
+    * all read this, so it turns slowly rather than jumping with the weather.
+    */
+  windDirection = 0;
+  /** 0..1. */
+  windStrength = 0.2;
+  private windTarget = 0;
+
   /** Smoothed effect values so changes are not instant. */
   severity = 0;
   workPenalty = 1;
@@ -98,8 +107,16 @@ export class WeatherSystem {
 
     this.blend = Math.min(1, this.blend + hours * 0.7);
 
+    // Wind swings around gradually and blows harder in bad weather.
+    if (this.justChanged) this.windTarget = this.rng.range(0, Math.PI * 2);
+    let delta = this.windTarget - this.windDirection;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    this.windDirection += delta * Math.min(1, hours * 0.25);
+
     const p = WEATHER_PROFILES[this.current];
     const t = clamp01(this.blend);
+    this.windStrength = damp(this.windStrength, 0.12 + p.severity * 0.85 * t, 0.8, hours);
     this.severity = damp(this.severity, p.severity * t, 1.2, hours);
     this.workPenalty = damp(this.workPenalty, 1 + (p.workPenalty - 1) * t, 1.2, hours);
     this.moveMultiplier = damp(this.moveMultiplier, 1 + (p.moveMultiplier - 1) * t, 1.2, hours);
@@ -132,7 +149,13 @@ export class WeatherSystem {
   }
 
   serialize(): Record<string, unknown> {
-    return { current: this.current, blend: this.blend, hoursRemaining: this.hoursRemaining };
+    return {
+      current: this.current,
+      blend: this.blend,
+      hoursRemaining: this.hoursRemaining,
+      windDirection: this.windDirection,
+      windStrength: this.windStrength,
+    };
   }
 
   restore(data: Record<string, unknown> | undefined): void {
@@ -142,5 +165,7 @@ export class WeatherSystem {
     }
     if (typeof data.blend === 'number') this.blend = data.blend;
     if (typeof data.hoursRemaining === 'number') this.hoursRemaining = data.hoursRemaining;
+    if (typeof data.windDirection === 'number') this.windDirection = data.windDirection;
+    if (typeof data.windStrength === 'number') this.windStrength = data.windStrength;
   }
 }

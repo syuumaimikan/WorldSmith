@@ -67,6 +67,7 @@ export type TaskType =
   | 'sleep'
   | 'socialise'
   | 'wander'
+  | 'flee'
   | 'deliver_carried';
 
 export interface NpcTask {

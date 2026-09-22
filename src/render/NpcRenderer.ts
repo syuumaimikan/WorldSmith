@@ -59,10 +59,20 @@ export class NpcRenderer {
   private scale = new Vector3(1, 1, 1);
   private up = new Vector3(0, 1, 0);
 
+  /** A settler the player has taken over; their body is drawn by the player rig. */
+  private hiddenId = 0;
+
   constructor(scene: Scene) {
     this.scene = scene;
     this.group.name = 'npcs';
     scene.add(this.group);
+  }
+
+  setHidden(npcId: number): void {
+    if (this.hiddenId === npcId) return;
+    if (this.hiddenId) this.releaseRig(this.hiddenId);
+    this.hiddenId = npcId;
+    if (npcId) this.releaseRig(npcId);
   }
 
   private lookOf(npc: Npc): CharacterLook {
@@ -97,6 +107,7 @@ export class NpcRenderer {
     const farR2 = FAR_RANGE * FAR_RANGE;
 
     for (const npc of npcs) {
+      if (npc.id === this.hiddenId) continue;
       const dx = npc.x - cameraPos.x;
       const dz = npc.z - cameraPos.z;
       const d2 = dx * dx + dz * dz;

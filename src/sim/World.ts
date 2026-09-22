@@ -35,6 +35,10 @@ import { Animal, ANIMALS, AnimalSpecies, createAnimal, speciesForBiome } from '.
 import { ItemPile, createPile } from './ItemPile';
 import { updateNpc } from './systems/NpcAI';
 import { updateAnimals } from './systems/WildlifeAI';
+import { TerrainEditor } from '../world/TerrainEdit';
+import { DisasterManager } from './Disasters';
+import type { Volcano } from './Volcano';
+import { updateVolcanoes } from './Volcano';
 import { SavedBuilding, SavedNpc, SavedJob } from '../persistence/schema';
 import { Inventory } from './Inventory';
 
@@ -82,6 +86,7 @@ export class World {
   readonly npcById = new Map<number, Npc>();
   readonly npcGrid = new SpatialGrid<Npc>(12);
 
+  readonly volcanoes: Volcano[] = [];
   readonly wildlife: Animal[] = [];
   readonly wildlifeById = new Map<number, Animal>();
 
@@ -91,9 +96,13 @@ export class World {
   readonly research = new ResearchSystem();
   readonly settlement: Settlement;
   readonly economy = new Economy();
+  readonly editor: TerrainEditor;
+  readonly disasters: DisasterManager;
 
   /** Per-tile exploration mask driving fog of war on the world map. */
   readonly explored: Uint8Array;
+  /** Npc currently being played directly in god mode, or 0. */
+  possessed = 0;
   /** Index of the tutorial step the player has reached. */
   tutorialStep = 0;
   /** Set when the player has an entity selected in the inspector. */
@@ -107,6 +116,8 @@ export class World {
   private assignmentTimer = 0;
   /** Ore kind each mine is working, decided by the vein it sits on. */
   private mineOre = new Map<number, ItemId[]>();
+  /** Throttles repeated ashfall messages during a long eruption. */
+  private lastAshReport = -99;
 
   constructor(
     config: WorldConfig,
@@ -129,6 +140,8 @@ export class World {
     this.explored = new Uint8Array(terrain.gridSize * terrain.gridSize);
     this.weather = new WeatherSystem(config.seed, config.climate);
     this.settlement = new Settlement(config.name, startX, startZ);
+    this.editor = new TerrainEditor(terrain);
+    this.disasters = new DisasterManager(config.seed);
 
     for (const n of nodes) this.addNode(n);
     for (const n of nodes) if (n.id >= this.nextEntityId) this.nextEntityId = n.id + 1;
@@ -1246,6 +1259,12 @@ export class World {
     // Animals.
     updateAnimals(this, dt);
 
+    // Fire and floodwater run on the same tick as everything else, so a
+    // burning forest is genuinely racing the rain.
+    this.disasters.updateFires(this, dt);
+    this.disasters.updateFloods(this, dt);
+    updateVolcanoes(this, dt);
+
     // Crops.
     this.growCrops(hours);
 
@@ -1533,6 +1552,223 @@ export class World {
       }
     }
     return null;
+  }
+
+  // =======================================================================
+  // Damage, fire and upheaval
+  // =======================================================================
+
+  /**
+   * Applies damage to a building. Returns true if it was destroyed outright.
+   * Anything short of that leaves a standing wreck that builders can repair,
+   * which is far more interesting than a building vanishing.
+   */
+  damageBuilding(b: Building, amount: number): boolean {
+    if (amount <= 0) return false;
+    b.condition = clamp(b.condition - amount, 0, 1);
+
+    if (b.condition <= 0.08) {
+      this.log.add(this.time, 'disaster', 'event.buildingDestroyed', { name: b.defId }, {
+        notable: true,
+        x: b.worldX,
+        z: b.worldZ,
+      });
+      // Rubble is left behind rather than the materials simply evaporating.
+      for (const [item, total] of Object.entries(b.def.totalMaterials) as [ItemId, number][]) {
+        const salvage = Math.floor(total * 0.2);
+        if (salvage > 0) this.dropPile(item, salvage, b.worldX, b.worldZ);
+      }
+      this.destroyBuilding(b);
+      return true;
+    }
+
+    if (b.complete && b.condition < 0.72 && !b.repairNeeded) {
+      b.repairNeeded = true;
+      b.repairWork = 0;
+      this.log.add(this.time, 'disaster', 'event.buildingDamaged', { name: b.defId }, {
+        x: b.worldX,
+        z: b.worldZ,
+      });
+    }
+    return false;
+  }
+
+  /** Builders putting a damaged building back together. */
+  applyRepair(b: Building, amount: number): boolean {
+    if (!b.repairNeeded) return true;
+    b.repairWork += amount;
+    if (b.repairWork < b.repairWorkRequired) return false;
+    b.repairWork = 0;
+    b.repairNeeded = false;
+    b.condition = 1;
+    return true;
+  }
+
+  /** Collapses a steep slope downhill. */
+  landslide(x: number, z: number, radius: number): void {
+    this.editor.sculpt(x, z, radius, -this.rng.range(1.5, 4), 'dome', 'landslide');
+    // Anything growing on the slope goes with it.
+    const doomed: ResourceNode[] = [];
+    this.nodeGrid.forEachNear(x, z, radius, (n) => doomed.push(n));
+    for (const n of doomed) if (this.rng.chance(0.6)) this.removeNode(n);
+    this.nav.markCostDirty();
+  }
+
+  /** Fire consumed a plant or tree. */
+  burnNode(node: ResourceNode): void {
+    const def = RESOURCES[node.kind];
+    // A burnt tree leaves charcoal-grade wood behind, not a full harvest.
+    if (def.category === 'tree' && this.rng.chance(0.4)) {
+      this.dropPile('log', 1, node.x, node.z);
+    }
+    this.removeNode(node);
+  }
+
+  /** Marks ground as burnt so the scar is visible afterwards. */
+  scorchGround(x: number, z: number, radius: number): void {
+    const t = this.terrain;
+    const ts = t.tileSize;
+    const r = Math.ceil(radius / ts);
+    const cx = t.tileX(x);
+    const cz = t.tileZ(z);
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const tx = cx + dx;
+        const tz = cz + dz;
+        if (!t.inBounds(tx, tz)) continue;
+        if (Math.hypot(dx, dz) * ts > radius) continue;
+        const i = t.index(tx, tz);
+        // Burnt ground is poor ground, and recovers slowly.
+        t.data.fertility[i] = clamp01(t.data.fertility[i] * 0.45);
+        t.setOverlay(tx, tz, OVERLAY.Burnt);
+      }
+    }
+  }
+
+  /** Sends a settler running away from something frightening. */
+  startleNpc(npc: Npc, fromX: number, fromZ: number): void {
+    const dx = npc.x - fromX;
+    const dz = npc.z - fromZ;
+    const len = Math.hypot(dx, dz) || 1;
+    const flee = 18 + this.rng.range(0, 12);
+    npc.setTask('flee', {
+      x: clamp(npc.x + (dx / len) * flee, 4, this.terrain.worldSize - 4),
+      z: clamp(npc.z + (dz / len) * flee, 4, this.terrain.worldSize - 4),
+    });
+    npc.needs.comfort = Math.max(0, npc.needs.comfort - 12);
+  }
+
+  onFloodStarted(x: number, z: number, radius: number): void {
+    void radius;
+    this.log.add(this.time, 'disaster', 'event.flood', undefined, { notable: true, x, z });
+  }
+
+  onFloodEnded(): void {
+    this.log.add(this.time, 'disaster', 'event.floodOver');
+  }
+
+  /** Ash has settled on an area. Reported once, not once per tile. */
+  onAshfall(x: number, z: number): void {
+    if (this.time.totalHours - this.lastAshReport < 6) return;
+    this.lastAshReport = this.time.totalHours;
+    this.log.add(this.time, 'disaster', 'event.ashfall', undefined, { x, z });
+  }
+
+  /** Lights a fire, used by lightning, eruptions and god powers. */
+  ignite(x: number, z: number, intensity = 0.7): void {
+    this.disasters.ignite(this, x, z, intensity);
+  }
+
+  // =======================================================================
+  // God powers that need world knowledge
+  // =======================================================================
+
+  /** Dries the soil out across the whole map. */
+  applyDrought(): void {
+    const f = this.terrain.data.fertility;
+    for (let i = 0; i < f.length; i++) f[i] = clamp01(f[i] * 0.7);
+    for (const b of this.buildings) {
+      for (const plot of b.fields) plot.watered = Math.min(plot.watered, 0.1);
+    }
+    this.log.add(this.time, 'weather', 'ev.droughtBegins', undefined, { notable: true });
+  }
+
+  /** Raises a cone of rock and marks it as a volcano. */
+  raiseVolcano(x: number, z: number, radius: number, strength: number): void {
+    const height = 25 + strength * 90;
+    this.editor.sculpt(x, z, radius, height, 'cone', 'volcano');
+    // A crater at the summit.
+    this.editor.sculpt(x, z, radius * 0.2, -height * 0.16, 'crater', 'volcano crater');
+    // Nothing survives being under a new mountain.
+    const doomed: ResourceNode[] = [];
+    this.nodeGrid.forEachNear(x, z, radius, (n) => doomed.push(n));
+    for (const n of doomed) this.removeNode(n);
+    this.volcanoes.push({
+      id: this.nextId(),
+      x,
+      z,
+      radius,
+      state: 'dormant',
+      pressure: 0.2,
+      name: `${this.config.name} Peak`,
+    });
+    this.nav.markCostDirty();
+  }
+
+  /** Opens a spring: a small pool that feeds the ground around it. */
+  createSpring(x: number, z: number, radius: number, strength: number): void {
+    // Dig a basin so the water has somewhere to sit, then fill it. Water that
+    // sits above its own banks would run off, which is why the ground is cut
+    // first rather than the level simply being raised.
+    this.editor.sculpt(x, z, radius, -(1 + strength * 3), 'dome', 'spring basin');
+    this.editor.flood(x, z, radius * 0.9, 0.6 + strength * 1.5);
+    // Damp ground around a spring.
+    const t = this.terrain;
+    const ts = t.tileSize;
+    const r = Math.ceil((radius * 2) / ts);
+    const cx = t.tileX(x);
+    const cz = t.tileZ(z);
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (!t.inBounds(cx + dx, cz + dz)) continue;
+        const d = Math.hypot(dx, dz) * ts;
+        if (d > radius * 2) continue;
+        const i = t.index(cx + dx, cz + dz);
+        t.data.moisture[i] = clamp01(t.data.moisture[i] + 0.3 * (1 - d / (radius * 2)));
+      }
+    }
+    this.nav.markCostDirty();
+  }
+
+  enrichSoil(x: number, z: number, radius: number, strength: number): void {
+    const t = this.terrain;
+    const ts = t.tileSize;
+    const r = Math.ceil(radius / ts);
+    const cx = t.tileX(x);
+    const cz = t.tileZ(z);
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const tx = cx + dx;
+        const tz = cz + dz;
+        if (!t.inBounds(tx, tz)) continue;
+        const d = Math.hypot(dx, dz) * ts;
+        if (d > radius) continue;
+        const i = t.index(tx, tz);
+        t.data.fertility[i] = clamp01(t.data.fertility[i] + strength * 0.5 * (1 - d / radius));
+        t.clearOverlay(tx, tz, OVERLAY.Burnt);
+      }
+    }
+  }
+
+  /** A group of settlers arrives at a point. */
+  sendSettlers(x: number, z: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2;
+      const px = clamp(x + Math.cos(a) * 3, 4, this.terrain.worldSize - 4);
+      const pz = clamp(z + Math.sin(a) * 3, 4, this.terrain.worldSize - 4);
+      this.spawnNpc(px, pz, 'settler');
+    }
+    this.log.add(this.time, 'people', 'ev.settlersArrive', { count }, { notable: true, x, z });
   }
 
   // =======================================================================
