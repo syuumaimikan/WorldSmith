@@ -105,7 +105,7 @@ export const WATER_FRAG = /* glsl */ `
 
     // Deep water is darker and more its own colour; shallow water is mostly
     // whatever is underneath it, which is why it reads as see-through.
-    float deepness = clamp(vDepth / 6.0, 0.0, 1.0);
+    float deepness = clamp(vDepth / 3.2, 0.0, 1.0);
     vec3 body = mix(uShallow, uDeep, deepness);
 
     // Looking straight down you see into it; looking along it you see the sky.
@@ -121,14 +121,19 @@ export const WATER_FRAG = /* glsl */ `
 
     // White water where it is running, and a pale edge where the sheet thins
     // out against the shore.
+    // Running water breaks white. Deep water does not, whatever the map says
+    // is flowing through it -- the drowned river valleys on a sea bed carry a
+    // flow figure like any other channel, and honouring it drew the whole
+    // drainage network of a sunken continent in whitecaps across the ocean.
     float shore = smoothstep(0.03, 0.10, vDepth) * (1.0 - smoothstep(0.10, 0.65, vDepth));
-    float foam = max(shore * 0.55, vFlow * 0.35);
+    float running = vFlow * (1.0 - smoothstep(0.5, 2.2, vDepth));
+    float foam = max(shore * 0.55, running * 0.35);
     colour = mix(colour, vec3(0.92, 0.96, 0.99), foam * 0.55);
 
     // Shallow water is see-through; deep water is not; foam is solid. The
     // very edge fades out entirely, so the water line is a water line rather
     // than a cut edge of geometry.
-    float alpha = mix(0.40, 0.96, deepness);
+    float alpha = mix(0.34, 0.97, deepness * deepness * (3.0 - 2.0 * deepness));
     alpha = max(alpha, foam * 0.85);
     alpha *= smoothstep(0.03, 0.22, vDepth);
     gl_FragColor = vec4(colour, alpha);
@@ -151,8 +156,8 @@ export interface WaterUniforms {
 export function makeWaterMaterial(): { material: ShaderMaterial; uniforms: WaterUniforms } {
   const uniforms: WaterUniforms = {
     uTime: { value: 0 },
-    uShallow: { value: new Color(0x4fa3c7) },
-    uDeep: { value: new Color(0x10334f) },
+    uShallow: { value: new Color(0x3f8fa8) },
+    uDeep: { value: new Color(0x123c56) },
     uSunDir: { value: new Vector3(0, 1, 0) },
     uSunColor: { value: new Color(0xfff0d6) },
     uSkyColor: { value: new Color(0x9fc4de) },

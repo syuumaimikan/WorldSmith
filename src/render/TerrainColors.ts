@@ -86,6 +86,15 @@ export function groundColor(
   let c = BASE[biome] ?? PALETTE.terrain.grass;
   c = seasonalGround(c, biome, tint.season);
 
+  // The sea bed. Shallow water is see-through, so what is under it has to
+  // read as sea bed and not as a wet field: pale sand near the beach going to
+  // dark silt as it drops away.
+  if (biome === Biome.Ocean || biome === Biome.Lake) {
+    const depth = Math.max(0, -height);
+    c = mixHex(c, 0x6a7a72, smoothstep(0.3, 5, depth));
+    c = mixHex(c, 0x243b44, smoothstep(5, 26, depth));
+  }
+
   // Moisture darkens and enriches low ground.
   if (biome === Biome.Grassland || biome === Biome.TemperateForest || biome === Biome.DenseForest) {
     c = mixHex(c, PALETTE.terrain.grassLush, clamp01((moisture - 0.45) * 1.3) * 0.5);

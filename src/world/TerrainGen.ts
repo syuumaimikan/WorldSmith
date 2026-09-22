@@ -321,6 +321,7 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
   // Droplet erosion leaves high-frequency speckle behind. Smoothing it out of
   // the flats (and only the flats) is what finally makes level ground level.
   smoothLowlands(height, N, config.tileSize, 5);
+  smoothSeabed(height, N, 3);
 
   // ---------------------------------------------------------------- stage 4
   progress('Carving rivers', 0);
@@ -329,9 +330,13 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
   const waterHeight = new Float32Array(total).fill(NO_WATER);
   const { lakes, isLake } = carveRiversAndLakes(height, filled, flow, waterHeight, N, config);
 
-  // Ocean everywhere below sea level.
+  // Ocean everywhere below sea level. River carving can leave a channel
+  // running below the waterline near the coast; where that happens the sea is
+  // simply what is in it, so the surface there is sea level and not whatever
+  // the river would have been.
   for (let i = 0; i < total; i++) {
-    if (height[i] < 0 && waterHeight[i] === NO_WATER) waterHeight[i] = 0;
+    if (height[i] >= 0) continue;
+    if (waterHeight[i] === NO_WATER || waterHeight[i] < 0) waterHeight[i] = 0;
   }
 
   // Recompute extremes after erosion and carving.
@@ -691,6 +696,46 @@ function percentileOf(data: Float32Array, min: number, max: number, fraction: nu
  * and it is also what the reference imagery shows — broad level valley floors
  * against sharp rock.
  */
+/**
+ * Takes the ploughed look off the sea bed.
+ *
+ * Rain and rivers carve the whole heightmap, including the part of it that
+ * ends up underwater, and through shallow water you can see the result: a
+ * drowned field of gullies. Real sea beds are smoothed by everything that
+ * settles on them, so this does the same, hardest where it is deepest and
+ * leaving the drowned river valleys near the coast alone -- those are real,
+ * and they are what makes an estuary look like an estuary.
+ */
+function smoothSeabed(h: Float32Array, N: number, passes: number): void {
+  const out = new Float32Array(h.length);
+  for (let p = 0; p < passes; p++) {
+    out.set(h);
+    for (let z = 1; z < N - 1; z++) {
+      for (let x = 1; x < N - 1; x++) {
+        const i = z * N + x;
+        if (h[i] >= -1) continue;
+        // Only other sea bed counts. Averaging in the cliff next door lifts
+        // the shallows above the waterline and walls the coast off, which
+        // dams every river that was trying to reach it.
+        let sum = 0;
+        let n = 0;
+        for (const j of [
+          i - 1, i + 1, i - N, i + N,
+          i - N - 1, i - N + 1, i + N - 1, i + N + 1,
+        ]) {
+          if (h[j] >= 0) continue;
+          sum += h[j];
+          n++;
+        }
+        if (n === 0) continue;
+        const w = clamp01((-h[i] - 1) / 14);
+        out[i] = Math.min(-0.05, lerp(h[i], sum / n, w * 0.8));
+      }
+    }
+    h.set(out);
+  }
+}
+
 function smoothLowlands(h: Float32Array, N: number, tileSize: number, passes: number): void {
   const out = new Float32Array(h.length);
   for (let p = 0; p < passes; p++) {

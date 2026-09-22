@@ -24,7 +24,7 @@ import { Biome } from '../world/types';
 import { NO_WATER } from '../world/TerrainGen';
 import { groundColor, TerrainTint } from './TerrainColors';
 import { makeWaterMaterial, WaterUniforms } from './Water';
-import { PALETTE } from './Palette';
+import { shade } from './Palette';
 import { mulberry32 } from '../core/rng';
 import { clamp01 } from '../core/math';
 
@@ -376,27 +376,53 @@ export class TerrainRenderer {
     }
 
     // Skirts: a vertical apron around the chunk that hides LOD seam cracks.
-    const skirtDrop = 6 + (1 << lod) * 2;
-    const skirtColor = PALETTE.terrain.rockDark;
+    //
+    // The apron used to be painted bare rock, which meant that seen from any
+    // height the world was a grid of black walls -- a crack hidden by
+    // something more obvious than the crack. Taking the colour from the ground
+    // it hangs off, darkened as if it were in the ground's own shadow, makes
+    // it read as the edge of a piece of turf instead of a cliff.
+    const skirtDrop = 3 + (1 << lod) * 1.5;
+    const edgeShade = (tx: number, tz: number): number => {
+      const cx = Math.min(N - 1, Math.max(0, tx));
+      const cz = Math.min(N - 1, Math.max(0, tz));
+      const i = cz * N + cx;
+      return shade(
+        groundColor(
+          d.biome[i] as Biome,
+          d.height[i],
+          d.temperature[i],
+          d.moisture[i],
+          0,
+          t.overlay[i],
+          0,
+          this.groundVariation(cx, cz),
+          this.tint,
+        ),
+        0.74,
+      );
+    };
     const edge = (
       ax: number, az: number, bx: number, bz: number, ha: number, hb: number,
+      tx: number, tz: number,
     ): void => {
-      pushTri(ax, ha, az, ax, ha - skirtDrop, az, bx, hb - skirtDrop, bz, skirtColor);
-      pushTri(ax, ha, az, bx, hb - skirtDrop, bz, bx, hb, bz, skirtColor);
+      const col = edgeShade(tx, tz);
+      pushTri(ax, ha, az, ax, ha - skirtDrop, az, bx, hb - skirtDrop, bz, col);
+      pushTri(ax, ha, az, bx, hb - skirtDrop, bz, bx, hb, bz, col);
     };
     for (let q = 0; q < quads; q++) {
       const a = baseX + q * step;
       const b = a + step;
       // north (z = baseZ) and south edges
-      edge(b * ts, baseZ * ts, a * ts, baseZ * ts, sampleH(b, baseZ), sampleH(a, baseZ));
+      edge(b * ts, baseZ * ts, a * ts, baseZ * ts, sampleH(b, baseZ), sampleH(a, baseZ), a, baseZ);
       const sz = baseZ + tiles;
-      edge(a * ts, sz * ts, b * ts, sz * ts, sampleH(a, sz), sampleH(b, sz));
+      edge(a * ts, sz * ts, b * ts, sz * ts, sampleH(a, sz), sampleH(b, sz), a, sz - 1);
       // west and east edges
       const az = baseZ + q * step;
       const bz = az + step;
-      edge(baseX * ts, az * ts, baseX * ts, bz * ts, sampleH(baseX, az), sampleH(baseX, bz));
+      edge(baseX * ts, az * ts, baseX * ts, bz * ts, sampleH(baseX, az), sampleH(baseX, bz), baseX, az);
       const sx = baseX + tiles;
-      edge(sx * ts, bz * ts, sx * ts, az * ts, sampleH(sx, bz), sampleH(sx, az));
+      edge(sx * ts, bz * ts, sx * ts, az * ts, sampleH(sx, bz), sampleH(sx, az), sx - 1, az);
     }
 
     const geo = new BufferGeometry();

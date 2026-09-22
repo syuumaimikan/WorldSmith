@@ -375,8 +375,9 @@ export class World {
     // put by. Nothing is assumed: the stores are searched and what is not
     // there is not eaten.
     const grown = this.foodGrownPerDay();
-    const fromStores = this.consumeStoredFood(Math.max(0, eaten - grown));
-    const produced = grown + fromStores;
+    const hunted = this.huntGame(Math.max(0, eaten - grown));
+    const fromStores = this.consumeStoredFood(Math.max(0, eaten - grown - hunted));
+    const produced = grown + hunted + fromStores;
     const surplus = produced - eaten;
 
     // A quarter short is not three-quarters fed. Rationing bites: everyone
@@ -421,7 +422,6 @@ export class World {
    * same thing that would happen if every footstep were simulated.
    */
   private foodGrownPerDay(): number {
-    const s = this.settlement;
     const adults = this.npcs.filter((n) => n.age >= WORKING_AGE && n.needs.health > 20);
     if (adults.length === 0) return 0;
 
@@ -438,21 +438,91 @@ export class World {
       adults.filter((n) => n.profession === 'farmer').length + adults.length * 0.25;
     const farmed = Math.min(fields * 0.03, farmers * 1.8) * growing;
 
-    // And what the hunters bring back, out of the animals that are there.
-    let game = 0;
-    for (const a of this.wildlife) {
-      if (Math.hypot(a.x - s.centre.x, a.z - s.centre.z) < s.radius + 160) game++;
-    }
-    const hunters =
-      adults.filter((n) => n.profession === 'hunter' || n.profession === 'fisher').length +
-      adults.length * 0.15;
-    const hunted = Math.min(game * 0.035, hunters * 1.3);
-
     // Foraged food is not counted here. It is fetched in bushel by bushel by
     // the same pass that fetches timber, out of the same bushes, and eaten
     // out of the stores it is put in -- counting it twice was what let a
-    // settlement of three hundred feed itself off a hedge.
-    return farmed + hunted;
+    // settlement of three hundred feed itself off a hedge. Nor is game:
+    // that is taken by huntGame, out of animals that stop existing.
+    return farmed;
+  }
+
+  /**
+   * A day's hunting, paid for in animals.
+   *
+   * The old version of this was a number: game within reach, times a small
+   * factor, added to the day's food. Nothing died. The same deer fed the camp
+   * every day for a century and the herd never noticed, which is exactly the
+   * kind of accounting this world is not supposed to do. Now the hunters pick
+   * animals out of the world and those animals are gone -- so a settlement
+   * that leans on its herds thins them, and a thinned herd feeds fewer
+   * people next year.
+   *
+   * @param want how much food is still needed today.
+   * @returns how much the hunt actually brought in.
+   */
+  private huntGame(want: number): number {
+    if (want <= 0) return 0;
+    const s = this.settlement;
+    const adults = this.npcs.filter((n) => n.age >= WORKING_AGE && n.needs.health > 20);
+    if (adults.length === 0) return 0;
+    const hunters =
+      adults.filter((n) => n.profession === 'hunter' || n.profession === 'fisher').length +
+      adults.length * 0.15;
+    if (hunters <= 0) return 0;
+
+    const reach = s.radius + 160;
+    const inRange: Animal[] = [];
+    for (const a of this.wildlife) {
+      if (ANIMALS[a.species].diet === 'predator') continue;
+      if (Math.hypot(a.x - s.centre.x, a.z - s.centre.z) > reach) continue;
+      inRange.push(a);
+    }
+    if (inRange.length === 0) return 0;
+
+    // Three ceilings, and the lowest one binds. Hunters can only be in so
+    // many places in a day; a herd is not a larder, so only a small share of
+    // what is in reach can be taken; and below a few animals in the district
+    // the third term falls under the loop's own threshold and hunting stops
+    // altogether. That last one matters: without it a settlement eats the
+    // last deer for miles and the herd never comes back.
+    let budget = Math.min(want, hunters * 1.6, inRange.length * 0.045);
+    // Thin game is not slow game. When there is little about, a day's hunting
+    // is a day of finding tracks.
+    const plenty = clamp01(inRange.length / 45);
+    let taken = 0;
+    let guard = 0;
+    while (budget > 0.4 && inRange.length > 0 && guard++ < 40) {
+      const i = this.rng.int(0, inRange.length - 1);
+      const animal = inRange[i];
+      inRange[i] = inRange[inRange.length - 1];
+      inRange.pop();
+      // Not every stalk ends in a kill.
+      if (!this.rng.chance(0.15 + plenty * 0.5)) continue;
+
+      let food = 0;
+      for (const y of ANIMALS[animal.species].yields) {
+        if (isFood(y.item)) food += y.amount;
+        else this.depositIntoStores(y.item, y.amount);
+      }
+      this.removeAnimal(animal);
+      taken += food;
+      budget -= food;
+    }
+    return taken;
+  }
+
+  /**
+   * Puts goods into whatever the settlement keeps things in. What will not
+   * fit is left where it fell, which is what happens to the third deer.
+   */
+  private depositIntoStores(item: ItemId, amount: number): number {
+    let left = amount;
+    for (const b of this.buildings) {
+      if (left <= 0) break;
+      if (!b.complete || !b.acceptsGoods(item)) continue;
+      left -= b.inventory.add(item, left);
+    }
+    return amount - left;
   }
 
   /**

@@ -146,7 +146,11 @@ export class Development {
     // building sites are given, spent on getting materials instead.
     // A little over one thing fetched per pair of hands per day, which is
     // about what a person gets done between everything else a day contains.
-    let units = hands * 0.6 * days;
+    // What a pair of hands fetches in a day. A forager working ground they
+    // know brings back rather more than one basket, and setting this too low
+    // is what left a band of six in a wood full of berries, nuts, mushrooms
+    // and game living hand to mouth for ever and never building anything.
+    let units = hands * 0.95 * days;
     if (units <= 0) return;
 
     const reach = s.radius + 80;

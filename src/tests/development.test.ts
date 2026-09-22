@@ -31,9 +31,20 @@ describe('a settlement left to itself', () => {
   it('raises roofs over the people who have none', () => {
     const world = buildTestWorld(makeTestConfig({ seedText: 'build' }));
     expect(world.settlement.housingCapacity).toBe(0);
-    skipYears(world, 3);
-    expect(world.buildings.length).toBeGreaterThan(0);
-    expect(world.settlement.housingCapacity).toBeGreaterThan(0);
+
+    // Measured across the years rather than at the end of them. The rest of
+    // the world keeps running during a skip, and an earthquake that flattens
+    // the row of tents somebody spent a winter putting up does not mean they
+    // never put them up -- it means the ground moved.
+    let mostRoofs = 0;
+    let mostBuildings = 0;
+    for (let y = 0; y < 3; y++) {
+      skipYears(world, 1);
+      mostRoofs = Math.max(mostRoofs, world.settlement.housingCapacity);
+      mostBuildings = Math.max(mostBuildings, world.buildings.length);
+    }
+    expect(mostBuildings).toBeGreaterThan(0);
+    expect(mostRoofs).toBeGreaterThan(0);
   });
 
   it('fells its own timber, out of the trees that are actually there', () => {

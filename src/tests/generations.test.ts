@@ -194,7 +194,11 @@ describe('a century left alone', () => {
 describe('the animals', () => {
   it('breed back towards what the land will carry, and no further', () => {
     const world = buildTestWorld(makeTestConfig({ seedText: 'herds' }));
-    // Cull almost everything, then leave the world alone.
+    // Nobody left to hunt them. The claim being checked is about what the
+    // land will carry, and a settlement working the same ground is a separate
+    // question -- answered in the next test.
+    for (const npc of [...world.npcs]) world.removeNpc(npc);
+
     const keep = new Map<string, number>();
     for (const a of [...world.wildlife]) {
       const n = keep.get(a.species) ?? 0;
@@ -211,6 +215,23 @@ describe('the animals', () => {
     // And it does not run away with itself.
     for (let i = 0; i < DAYS_PER_YEAR * 200; i++) world.skipDay();
     expect(world.wildlife.length).toBeLessThanOrEqual(600);
+  });
+
+  it('are fewer where there are hunters, because hunting takes them', () => {
+    // The same world twice: once with its settlement, once emptied of people
+    // the moment it is built. Nothing else differs, so whatever gap opens up
+    // over a century is the hunting -- which means the hunting is real, and
+    // the animals it accounts for are animals that stopped existing.
+    const hunted = buildTestWorld(makeTestConfig({ seedText: 'quarry' }));
+    const left = buildTestWorld(makeTestConfig({ seedText: 'quarry' }));
+    for (const npc of [...left.npcs]) left.removeNpc(npc);
+    expect(hunted.wildlife.length).toBe(left.wildlife.length);
+
+    for (let i = 0; i < DAYS_PER_YEAR * 100; i++) {
+      hunted.skipDay();
+      left.skipDay();
+    }
+    expect(hunted.wildlife.length).toBeLessThan(left.wildlife.length);
   });
 });
 
