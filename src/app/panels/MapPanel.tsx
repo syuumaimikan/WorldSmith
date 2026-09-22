@@ -5,6 +5,7 @@ import { Biome } from '../../world/types';
 import { OVERLAY } from '../../world/Terrain';
 import { hexToCss, PALETTE, mixHex, shade } from '../../render/Palette';
 import { clamp01 } from '../../core/math';
+import { tierOf } from '../../sim/Nations';
 import { useT } from '../../i18n';
 import { biomeName } from '../../i18n/names';
 
@@ -296,6 +297,49 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
                   fill={hexToCss(b.def.housing ? PALETTE.build.roofTile : PALETTE.build.wood)}
                 />
               ))}
+            {/* Other people's towns, sized by what they are. A city is a
+                mark you can see from across the map; a village is a dot. */}
+            {world.nations.allTowns.map((town) => {
+              // A town you have not been near is a town you have not heard
+              // of, except on the maps that read a system rather than the
+              // ground -- those are what the player knows about the world,
+              // not what they have walked over.
+              const known =
+                OVERVIEW_MODES.has(mode) ||
+                world.explored[
+                  world.terrain.index(
+                    world.terrain.tileX(town.x),
+                    world.terrain.tileZ(town.z),
+                  )
+                ] === 1;
+              if (!known) return null;
+              const tier = tierOf(town);
+              const r = tier === 'city' ? 5 : tier === 'town' ? 3.5 : 2.2;
+              const nation = world.nations.nations.find((n) => n.id === town.nationId);
+              const colour = nation ? hexToCss(wheelColour(nation.id)) : '#cccccc';
+              return (
+                <g key={`town${town.id}`}>
+                  <circle
+                    cx={town.x * scale}
+                    cy={town.z * scale}
+                    r={r}
+                    fill={colour}
+                    stroke="rgba(0,0,0,0.55)"
+                    strokeWidth={1}
+                  />
+                  {tier !== 'village' && (
+                    <text
+                      x={town.x * scale + r + 3}
+                      y={town.z * scale + 3}
+                      fill="rgba(255,255,255,0.82)"
+                      fontSize={tier === 'city' ? 10 : 8.5}
+                    >
+                      {town.name}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
             {world.pois
               .filter((p) => p.discovered)
               .map((p) => (
