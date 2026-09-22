@@ -83,12 +83,18 @@ function updateNeeds(world: World, npc: Npc, dt: number): void {
   const comfortTarget = clamp01(shelterQuality - exposure * 0.45) * 100;
   n.comfort = damp(n.comfort, comfortTarget, 0.4, hours);
 
-  // Starvation and exposure cost health; rest and food restore it.
-  let healthDelta = 0;
-  if (n.hunger < 12) healthDelta -= hours * 5.5;
-  else if (n.hunger > 55 && n.rest > 45) healthDelta += hours * 1.6;
-  if (n.comfort < 18) healthDelta -= hours * 1.4;
-  n.health = clamp(n.health + healthDelta, 0, 100);
+  // Going hungry or sleeping cold does not wound anybody. It wastes them,
+  // and being fed and warm brings it back -- which is what the body does with
+  // this, rather than a bar going down and up.
+  let toll = 0;
+  if (n.hunger < 12) toll += hours * 0.012;
+  if (n.comfort < 18) toll += hours * 0.004;
+  if (toll > 0) npc.body.starve(toll);
+  const fed = clamp01(n.hunger / 100);
+  npc.body.advance(hours / 24, fed, world.careQuality(npc), npc.rng);
+  if (npc.body.failure()) {
+    world.killNpc(npc, 'ev.diedOfInjury', { name: npc.name });
+  }
 }
 
 // -------------------------------------------------------------------------

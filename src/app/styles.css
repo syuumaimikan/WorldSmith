@@ -591,12 +591,29 @@ button {
   color: var(--parchment);
 }
 
+/* An item icon is a drawing now, not a swatch. The frame stays; the flat
+   colour it used to hold does not. */
 .item-icon {
   width: 26px;
   height: 26px;
-  border-radius: 3px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
-  box-shadow: inset 0 -6px 8px rgba(0, 0, 0, 0.25), inset 0 4px 6px rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* The slot whose contents are actually in the player's hand. */
+.inv-slot.in-hand {
+  outline: 2px solid var(--accent, #e0c04a);
+  outline-offset: -2px;
+}
+
+.item-icon svg {
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
 }
 
 .interact-prompt {

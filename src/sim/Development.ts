@@ -124,9 +124,9 @@ export class Development {
     let hands = 0;
     for (const npc of world.npcs) {
       if (npc.age < WORKING_AGE) continue;
-      if (npc.needs.health < 25) continue;
+      if (npc.condition < 25) continue;
       // The same frailty and health that slow a person down in a played day.
-      hands += (0.55 + clamp01(npc.needs.health / 100) * 0.45) * (1 - npc.frailty * 0.45);
+      hands += (0.55 + clamp01(npc.condition / 100) * 0.45) * (1 - npc.frailty * 0.45);
     }
     return hands;
   }

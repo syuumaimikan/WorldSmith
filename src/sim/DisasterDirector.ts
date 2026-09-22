@@ -189,7 +189,7 @@ export class DisasterDirector {
       const people = world.npcs.length;
       if (people >= 6) {
         const unwell =
-          world.npcs.reduce((n, npc) => n + (npc.needs.health < 60 ? 1 : 0), 0) / people;
+          world.npcs.reduce((n, npc) => n + (npc.condition < 60 ? 1 : 0), 0) / people;
         const crowding = clamp01((people - 8) / 40);
         const warmth = clamp01((climate.meanTemperature() - 14) / 16);
         set('disease', unwell * 0.7 + crowding * 0.25 + warmth * 0.15, 'cause.crowding');

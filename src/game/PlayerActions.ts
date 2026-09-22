@@ -12,7 +12,7 @@ import { RESOURCES, ResourceNode } from '../world/resources';
 import { ItemPile } from '../sim/ItemPile';
 import { Building } from '../sim/Building';
 import { Npc } from '../sim/Npc';
-import { ITEMS, ItemId } from '../data/items';
+import { ITEMS, ItemId, nutritionOf } from '../data/items';
 import { t } from '../i18n';
 import { buildingName, itemName, resourceName, professionName, carryingSummary } from '../i18n/names';
 import { buildingStatus } from '../i18n/status';
@@ -162,7 +162,7 @@ export function findTarget(world: World): InteractTarget {
 }
 
 export interface ActionResult {
-  kind: 'none' | 'gathered' | 'picked_up' | 'stored' | 'selected' | 'talked' | 'full';
+  kind: 'none' | 'gathered' | 'picked_up' | 'stored' | 'selected' | 'talked' | 'full' | 'used' | 'placed';
   message?: string;
   /** Position for particle effects. */
   x?: number;
@@ -181,8 +181,12 @@ export function applyToolWork(world: World, node: ResourceNode, dt: number): Act
   const def = RESOURCES[node.kind];
   const p = world.player;
 
+    // A tool in the pack is not a tool in the hand. What is actually out
+    // decides how fast the work goes, and a tool for the wrong job is no
+    // better than none.
   const toolFor = def.skill === 'chop' ? 'axe' : def.skill === 'mine' ? 'pickaxe' : null;
-  const hasTool = toolFor ? p.inventory.has(toolFor) : false;
+  const held = p.equipped();
+  const hasTool = toolFor !== null && held === toolFor;
   const multiplier = hasTool ? 1.5 : def.skill === 'forage' ? 1 : 0.55;
 
   p.busyAction = def.skill === 'chop' ? 'chop' : def.skill === 'mine' ? 'mine' : 'farm';
@@ -358,4 +362,117 @@ export function greeting(npc: Npc, world: World): string {
 /** The item the player has selected on the quick bar, if any. */
 export function activeQuickItem(world: World, slot: number): ItemId | null {
   return world.player.quickSlots[slot] ?? null;
+}
+
+// ---------------------------------------------------------------- the hands
+
+/**
+ * Takes an inventory slot into the hand.
+ *
+ * Picking the slot that is already held puts it away again, which is how
+ * every game that has ever had a hotbar behaves and how people expect it to.
+ */
+export function equipSlot(world: World, index: number): ActionResult {
+  const p = world.player;
+  if (index < 0 || index >= p.inventory.slots.length) return { kind: 'none' };
+  if (!p.inventory.slots[index]) {
+    p.equippedSlot = -1;
+    return { kind: 'none' };
+  }
+  p.equippedSlot = p.equippedSlot === index ? -1 : index;
+  const item = p.equipped();
+  return {
+    kind: 'none',
+    message: item ? t('act.nowHolding', { item: itemName(item) }) : t('act.handsFree'),
+  };
+}
+
+/** Moves one stack to another slot, or trades the two over. */
+export function swapSlots(world: World, from: number, to: number): void {
+  const inv = world.player.inventory;
+  if (from === to) return;
+  if (from < 0 || to < 0 || from >= inv.slots.length || to >= inv.slots.length) return;
+  const held = world.player.equippedSlot;
+  const tmp = inv.slots[from];
+  inv.slots[from] = inv.slots[to];
+  inv.slots[to] = tmp;
+  // The hand follows the thing it was holding, not the hole it left.
+  if (held === from) world.player.equippedSlot = to;
+  else if (held === to) world.player.equippedSlot = from;
+}
+
+/**
+ * Does whatever the held thing is for.
+ *
+ * Food is eaten, herbs are used on whatever is wrong with you, and a tool
+ * does its work by being held rather than by being pressed -- so using one
+ * here does nothing, and says so.
+ */
+export function useEquipped(world: World): ActionResult {
+  const p = world.player;
+  const item = p.equipped();
+  if (!item) return { kind: 'none', message: t('act.nothingHeld') };
+  const def = ITEMS[item];
+
+  if (def.category === 'food') {
+    const before = p.stats.hunger;
+    p.stats.hunger = Math.min(100, p.stats.hunger + nutritionOf(item));
+    p.inventory.remove(item, 1);
+    if (p.inventory.count(item) === 0) p.equippedSlot = -1;
+    return {
+      kind: 'used',
+      message: t('act.ate', { item: itemName(item), gained: Math.round(p.stats.hunger - before) }),
+      x: p.position.x,
+      y: p.position.y + 1.2,
+      z: p.position.z,
+    };
+  }
+
+  if (item === 'herbs') {
+    // Not a potion. A poultice does a little, once, for what is actually
+    // hurting -- and it is gone afterwards.
+    const worst = p.body.worstInjury();
+    if (!worst) return { kind: 'none', message: t('act.nothingToTreat') };
+    p.inventory.remove('herbs', 1);
+    if (p.inventory.count('herbs') === 0) p.equippedSlot = -1;
+    worst.severity = Math.max(0, worst.severity - 0.28);
+    worst.treated = true;
+    return {
+      kind: 'used',
+      message: t('act.treated', { part: t(`body.${worst.part}`) }),
+      x: p.position.x,
+      y: p.position.y + 1.2,
+      z: p.position.z,
+    };
+  }
+
+  if (def.category === 'tool') return { kind: 'none', message: t('act.toolIsHeld') };
+  return { kind: 'none', message: t('act.cannotUse', { item: itemName(item) }) };
+}
+
+/**
+ * Puts one of the held thing down where the player is looking.
+ *
+ * It becomes a real pile on the ground, which is the same object a logger
+ * leaves at the treeline -- so it can be picked up again, hauled by somebody
+ * else, and spoils if it is food.
+ */
+export function placeEquipped(world: World, x: number, z: number): ActionResult {
+  const p = world.player;
+  const item = p.equipped();
+  if (!item) return { kind: 'none', message: t('act.nothingHeld') };
+  if (world.terrain.waterDepthAt(x, z) > 0.4) {
+    return { kind: 'none', message: t('act.cannotPlaceThere') };
+  }
+  if (p.inventory.remove(item, 1) <= 0) return { kind: 'none' };
+  world.dropPile(item, 1, x, z);
+  if (p.inventory.count(item) === 0) p.equippedSlot = -1;
+  return {
+    kind: 'placed',
+    message: t('act.placed', { item: itemName(item) }),
+    x,
+    y: world.terrain.heightAt(x, z) + 0.3,
+    z,
+    effect: 'dust',
+  };
 }

@@ -443,13 +443,30 @@ export class NationSystem {
     return lost;
   }
 
-  /** Nobody claims open water; a border stops at the shore. */
+  /**
+   * Nobody claims open water; a border stops at the shore.
+   *
+   * A cell counts as land if any of it is land, rather than if the exact
+   * point at its centre happens to be dry. On a ragged coast -- which is to
+   * say, on a coast -- a cell can be half a headland and still have sea at
+   * the middle of it, and reading only the centre left seaside peoples
+   * holding no ground at all.
+   */
   private landCell(cx: number, cz: number): boolean {
     const t = this.terrain;
-    const wx = (cx + 0.5) * this.cellSize;
-    const wz = (cz + 0.5) * this.cellSize;
-    const i = t.index(t.tileX(wx), t.tileZ(wz));
-    return t.waterHeight[i] <= t.data.height[i];
+    for (const [ox, oz] of [
+      [0.5, 0.5],
+      [0.2, 0.2],
+      [0.8, 0.2],
+      [0.2, 0.8],
+      [0.8, 0.8],
+    ]) {
+      const wx = (cx + ox) * this.cellSize;
+      const wz = (cz + oz) * this.cellSize;
+      const i = t.index(t.tileX(wx), t.tileZ(wz));
+      if (t.waterHeight[i] <= t.data.height[i]) return true;
+    }
+    return false;
   }
 
   /**

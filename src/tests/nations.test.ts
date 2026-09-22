@@ -60,6 +60,9 @@ describe('the map of the world', () => {
   });
 
   it('never claims open water', () => {
+    // A claimed cell has to have some land in it. Not all of it -- a cell on a
+    // ragged coast is half headland and half sea, and somebody owns the
+    // headland -- but a cell that is nothing but water belongs to nobody.
     const world = buildTestWorld();
     const n = world.nations;
     const t = world.terrain;
@@ -67,11 +70,20 @@ describe('the map of the world', () => {
       if (n.claims[i] === 0) continue;
       const cx = i % n.cells;
       const cz = Math.floor(i / n.cells);
-      const ti = t.index(
-        t.tileX((cx + 0.5) * n.cellSize),
-        t.tileZ((cz + 0.5) * n.cellSize),
-      );
-      expect(t.waterHeight[ti]).toBeLessThanOrEqual(t.data.height[ti]);
+      let anyLand = false;
+      for (let oz = 0.1; oz < 1 && !anyLand; oz += 0.2) {
+        for (let ox = 0.1; ox < 1; ox += 0.2) {
+          const ti = t.index(
+            t.tileX((cx + ox) * n.cellSize),
+            t.tileZ((cz + oz) * n.cellSize),
+          );
+          if (t.waterHeight[ti] <= t.data.height[ti]) {
+            anyLand = true;
+            break;
+          }
+        }
+      }
+      expect(anyLand, `cell ${cx},${cz} is open water`).toBe(true);
     }
   });
 

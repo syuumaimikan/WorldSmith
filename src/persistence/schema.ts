@@ -8,6 +8,7 @@
 import type { WorldConfig, OreVein, PointOfInterest } from '../world/types';
 import { RESOURCES } from '../world/resources';
 import type { ResourceKind, ResourceNode } from '../world/resources';
+import type { SerializedBody } from '../sim/Body';
 import type { WorldEvent } from '../sim/EventLog';
 import type { SerializedInventory } from '../sim/Inventory';
 import type { GameSpeed } from '../sim/Time';
@@ -57,6 +58,7 @@ export interface SavedNpc {
   homeId: number;
   workplaceId: number;
   needs: Record<string, number>;
+  body?: SerializedBody;
   skills: Record<string, number>;
   inventory: SerializedInventory;
   money: number;

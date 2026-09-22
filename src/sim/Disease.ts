@@ -132,7 +132,7 @@ export class DiseaseSystem {
       stage: 'incubating',
       hoursLeft: this.rng.range(12, 48),
       // Someone already weak takes it harder.
-      severity: clamp01(severity * (1.4 - npc.needs.health / 140)),
+      severity: clamp01(severity * (1.4 - npc.condition / 140)),
     });
   }
 
@@ -149,7 +149,10 @@ export class DiseaseSystem {
       if (inf.stage === 'ill') {
         // Being ill costs health, and being hungry or cold makes it worse.
         const strain = inf.severity * (npc.needs.hunger < 40 ? 1.7 : 1);
-        npc.needs.health = clamp(npc.needs.health - hours * strain * 2.2, 0, 100);
+        // Illness presses on the body rather than draining a number. It is
+        // what the sickness is doing right now, so it eases when the fever
+        // breaks instead of leaving a permanent dent.
+        npc.body.sickness = clamp01(Math.max(npc.body.sickness, strain * 0.75));
         npc.needs.comfort = clamp(npc.needs.comfort - hours * 1.2, 0, 100);
       }
       if (inf.hoursLeft > 0) continue;
@@ -164,7 +167,7 @@ export class DiseaseSystem {
         // Care matters: a clinic and a full belly are most of survival.
         const care = world.careQuality(npc);
         const odds = o.lethality * inf.severity * (1 - care * 0.7);
-        if (npc.needs.health < 12 || this.rng.chance(odds)) {
+        if (npc.condition < 12 || this.rng.chance(odds)) {
           o.deaths++;
           o.infections.delete(inf.npcId);
           world.killNpc(npc, 'ev.diedOfIllness', { name: npc.name, illness: o.name });
@@ -179,7 +182,7 @@ export class DiseaseSystem {
       o.infections.delete(inf.npcId);
       o.immune.add(inf.npcId);
       o.recoveries++;
-      npc.needs.health = Math.max(npc.needs.health, 45);
+      npc.body.sickness = 0;
     }
   }
 
@@ -203,7 +206,7 @@ export class DiseaseSystem {
         if (o.infections.has(other.id) || o.immune.has(other.id)) return;
         if (Math.hypot(other.x - carrier.x, other.z - carrier.z) > CONTACT_RANGE) return;
         // Someone run down catches it more easily.
-        const frailty = 1 + clamp01((70 - other.needs.health) / 70) * 0.8;
+        const frailty = 1 + clamp01((70 - other.condition) / 70) * 0.8;
         if (!this.rng.chance(clamp01(rate * frailty * hours * 0.35))) return;
         this.infect(o, other, o.contagion);
       });

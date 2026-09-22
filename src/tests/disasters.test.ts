@@ -152,16 +152,16 @@ describe('famine', () => {
       n.frailty = 0;
     }
     fed.needs.hunger = 90;
-    fed.needs.health = 100;
     starving.needs.hunger = 10;
-    starving.needs.health = 100;
 
     world.settlement.foodDays = 0;
     world.beginFamine(1);
     runAir(world, 2);
 
-    expect(starving.needs.health).toBeLessThan(100);
-    expect(fed.needs.health).toBe(100);
+    // Going without does not wound anybody. It wastes them, and only the one
+    // who is actually going without.
+    expect(starving.body.wasting).toBeGreaterThan(0);
+    expect(fed.body.wasting).toBe(0);
   });
 });
 
@@ -181,7 +181,7 @@ describe('sickness', () => {
     // Put them shoulder to shoulder and it moves.
     for (let i = 0; i < world.npcs.length; i++) {
       place(world, i, 40 + (i % 2), 40);
-      world.npcs[i].needs.health = 55;
+      world.npcs[i].body.starve(0.3);
     }
     for (let i = 0; i < 60 && outbreak!.infections.size < 2; i++) {
       world.disease.update(world, 3);
@@ -210,7 +210,7 @@ describe('sickness', () => {
       world.settlement.infrastructure.health = infra;
       for (let i = 0; i < world.npcs.length; i++) {
         place(world, i, 40, 40);
-        world.npcs[i].needs.health = health;
+        world.npcs[i].body.starve(1 - health / 100);
         world.npcs[i].needs.hunger = health;
       }
       const o = world.disease.begin(world, 40, 40, 0.9)!;

@@ -100,7 +100,6 @@ describe('being born', () => {
     for (const n of world.npcs) {
       n.age = 25;
       n.lifespan = 80;
-      n.needs.health = 90;
     }
     const before = world.npcs.length;
     for (let i = 0; i < DAYS_PER_YEAR * 10; i++) {
@@ -119,7 +118,6 @@ describe('being born', () => {
     for (const n of world.npcs) {
       n.age = 25;
       n.lifespan = 90;
-      n.needs.health = 95;
       n.needs.mood = 80;
     }
     let born = 0;

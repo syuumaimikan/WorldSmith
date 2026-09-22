@@ -82,8 +82,10 @@ export class Generations {
       // rather than identical right up to the day they drop.
       const decline = npc.age - (npc.lifespan - 10);
       if (decline > 0) {
+        // Age is not an injury and it is not starvation. It is carried in
+        // frailty, which `condition` already reads, so there is nothing here
+        // to subtract from anything.
         npc.frailty = clamp01(decline / 14);
-        npc.needs.health = Math.max(4, npc.needs.health - npc.frailty * 0.9 * days);
       }
 
       // Not a line: a rising chance, which some outlive and some do not.
@@ -106,7 +108,7 @@ export class Generations {
    */
   private bearChildren(world: World, days: number): void {
     const fertile = world.npcs.filter(
-      (n) => n.age >= FERTILE.from && n.age <= FERTILE.to && n.needs.health > 35,
+      (n) => n.age >= FERTILE.from && n.age <= FERTILE.to && n.condition > 35,
     );
     if (fertile.length < 2) return;
     const pairs = Math.floor(fertile.length / 2);

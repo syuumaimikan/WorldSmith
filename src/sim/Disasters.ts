@@ -7,6 +7,7 @@
  * The damage, the repairs and the recovery are all ordinary simulation.
  */
 
+import { Body } from './Body';
 import { Rng } from '../core/rng';
 import { clamp, clamp01, smoothstep } from '../core/math';
 import { Biome } from '../world/types';
@@ -371,7 +372,11 @@ export class DisasterManager {
     for (const npc of world.npcs) {
       const i = t.index(t.tileX(npc.x), t.tileZ(npc.z));
       if (!this.floods.some((c) => c.index === i)) continue;
-      npc.needs.health = Math.max(0, npc.needs.health - (25 + wave.strength * 55));
+      // Struck by the water and by everything the water is carrying.
+      npc.body.hurtPart(Body.randomPart(this.rng), 'bruise', 0.3 + wave.strength * 0.5);
+      if (this.rng.chance(0.3 + wave.strength * 0.4)) {
+        npc.body.hurtPart('torso', 'bruise', 0.25 + wave.strength * 0.45);
+      }
       world.startleNpc(npc, wave.x, wave.z);
     }
     for (const node of [...world.nodes]) {

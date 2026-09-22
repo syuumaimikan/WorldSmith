@@ -31,7 +31,7 @@ import { World } from '../sim/World';
 import { GameSpeed } from '../sim/Time';
 import { clamp } from '../core/math';
 import { BuildController, PlacementState } from './BuildController';
-import { applyToolWork, findTarget, interact, InteractTarget } from './PlayerActions';
+import { InteractTarget, applyToolWork, equipSlot, findTarget, interact, placeEquipped, useEquipped } from './PlayerActions';
 import { BuildingId } from '../data/buildings';
 import { Overlay, OverlayRenderer } from '../render/OverlayRenderer';
 import { AudioEngine } from '../audio/AudioEngine';
@@ -415,6 +415,34 @@ export class Game {
       } else if (this.world.player.busyAction) {
         this.world.player.busyAction = null;
         this.world.player.busyTargetId = 0;
+      }
+
+      // --- The hands ------------------------------------------------------
+      //
+      // Number keys take something into the hand, F does whatever it is for,
+      // and G puts one of it down where the player is looking. A tool only
+      // speeds work while it is actually out.
+      for (let slot = 0; slot < 6; slot++) {
+        if (!input.keyPressed(`Digit${slot + 1}`)) continue;
+        const r = equipSlot(this.world, slot);
+        if (r.message) this.toast(r.message);
+      }
+      if (input.keyPressed('KeyF')) {
+        const r = useEquipped(this.world);
+        if (r.message) this.toast(r.message);
+        if (r.kind === 'used') this.audio.play('pickup');
+      }
+      if (input.keyPressed('KeyG')) {
+        // A pace in front of them, which is where a person puts things down.
+        const p = this.world.player;
+        const px = p.position.x + Math.sin(p.yaw) * 1.3;
+        const pz = p.position.z + Math.cos(p.yaw) * 1.3;
+        const r = placeEquipped(this.world, px, pz);
+        if (r.message) this.toast(r.message);
+        if (r.kind === 'placed') {
+          this.audio.play('store');
+          if (r.x !== undefined) this.particles.emit('dust', r.x, r.y ?? 0, r.z ?? 0, 4);
+        }
       }
 
       if (input.mousePressed(0) && input.overViewport) this.pickUnderCursor();

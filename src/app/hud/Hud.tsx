@@ -118,7 +118,7 @@ export function Hud({
       {/* ------------------------------------------------------------- left */}
       <div className="hud-left">
         <div className="panel stat-bars">
-          <StatBar label={t('hud.health')} value={player.stats.health / 100} color={PALETTE.ui.bad} />
+          <StatBar label={t('hud.health')} value={player.condition / 100} color={PALETTE.ui.bad} />
           <StatBar label={t('hud.stamina')} value={player.stats.stamina / 100} color={PALETTE.ui.good} />
           <StatBar label={t('hud.pack')} value={player.carriedWeightFraction()} color={PALETTE.ui.warn} />
         </div>

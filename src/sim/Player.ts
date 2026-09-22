@@ -8,6 +8,7 @@
  * use the same collision routine.
  */
 
+import { Body } from './Body';
 import { Vector3 } from 'three';
 import { Terrain } from '../world/Terrain';
 import { Inventory } from './Inventory';
@@ -52,6 +53,35 @@ export class Player {
   readonly inventory = new Inventory(24, 90);
   /** Quick-access bar referencing inventory slot indices. */
   readonly quickSlots: (ItemId | null)[] = [null, null, null, null, null, null];
+  /**
+   * Which inventory slot is actually in their hand, or -1 for empty hands.
+   *
+   * Carrying something and holding something are different. A pack with an axe
+   * in it does not fell a tree; an axe in your hand does, and so the tool that
+   * speeds work is the one that is out, not the best one anywhere on your
+   * person.
+   */
+  equippedSlot = -1;
+
+  /** What they are holding, if anything. */
+  equipped(): ItemId | null {
+    const slot = this.inventory.slots[this.equippedSlot];
+    return slot ? slot.item : null;
+  }
+
+  /**
+   * The same body every settler has. The player is not a special case: they
+   * break limbs, their wounds turn, and going without wastes them.
+   */
+  readonly body = new Body();
+
+  /**
+   * What the bar at the top left is drawing, 0..100. Read off the body; there
+   * is nothing here to damage directly.
+   */
+  get condition(): number {
+    return Math.round(this.body.condition * (0.55 + clamp01(this.stats.hunger / 100) * 0.45));
+  }
 
   stats: PlayerStats = {
     health: 100,

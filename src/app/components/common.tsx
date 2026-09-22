@@ -1,20 +1,8 @@
 import { ReactNode } from 'react';
-import { ItemId, ITEMS } from '../../data/items';
-import { hexToCss } from '../../render/Palette';
-import { useLocale } from '../../i18n';
+import { ItemId } from '../../data/items';
 import { itemName } from '../../i18n/names';
 
-export function ItemIcon({ item, size = 26 }: { item: ItemId; size?: number }): JSX.Element {
-  const def = ITEMS[item];
-  useLocale();
-  return (
-    <div
-      className="item-icon"
-      title={itemName(item)}
-      style={{ width: size, height: size, background: hexToCss(def.color) }}
-    />
-  );
-}
+export { ItemIcon } from './ItemIcon';
 
 export function Window({
   title,

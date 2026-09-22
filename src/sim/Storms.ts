@@ -9,6 +9,7 @@
  * lives on and falls apart within a day.
  */
 
+import { Body } from './Body';
 import { Rng } from '../core/rng';
 import { clamp, clamp01, smoothstep, TAU } from '../core/math';
 import { windResistance } from './Disasters';
@@ -323,8 +324,13 @@ export class StormSystem {
       if (d > s.radius * 1.6) continue;
       world.startleNpc(npc, s.x, s.z);
       if (d < s.radius * 0.5 && !world.isSheltered(npc)) {
-        const harm = (s.kind === 'tornado' ? 22 : 4) * force;
-        npc.needs.health = clamp(npc.needs.health - harm, 0, 100);
+        // A tornado throws things at people; a blizzard takes their fingers.
+        // Both land somewhere in particular rather than on a bar.
+        if (s.kind === 'tornado') {
+          npc.body.hurtPart(Body.randomPart(this.rng), 'bruise', 0.22 * force);
+        } else {
+          npc.body.hurtPart(this.rng.chance(0.5) ? 'leftArm' : 'rightArm', 'frostbite', 0.05 * force);
+        }
       }
     }
   }

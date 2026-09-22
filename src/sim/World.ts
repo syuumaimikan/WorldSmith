@@ -387,29 +387,34 @@ export class World {
     const ratio = produced / Math.max(1, eaten);
     const fed = surplus >= 0 ? 1 : clamp01((ratio - 0.72) * 3.6);
 
-    for (const npc of this.npcs) {
+    const care = this.careQuality(this.npcs[0]);
+    for (const npc of [...this.npcs]) {
       npc.needs.hunger = clamp(npc.needs.hunger + (fed * 100 - npc.needs.hunger) * 0.25, 0, 100);
       if (npc.age < 14) npc.needs.hunger = Math.min(100, npc.needs.hunger + 4);
       const roofed = s.housingCapacity >= mouths;
       npc.needs.rest = clamp(npc.needs.rest + (roofed ? 6 : -2), 0, 100);
+
       // Sleeping out is not free, and it is far worse in winter than in
-      // summer. Only the share of people who have no bed pay for it.
+      // summer. Only the share of people who have no bed pay for it. Going
+      // without food and without a roof does not wound anybody -- it wastes
+      // them, which comes back if the weather or the harvest does.
       const shortfall = clamp01((mouths - s.housingCapacity) / Math.max(1, mouths));
       const winter = this.time.snapshot().season === 'winter';
       const exposure = shortfall * (winter ? 1.4 : 0.35);
-      npc.needs.health = clamp(
-        npc.needs.health + (npc.needs.hunger > 40 ? 1.2 : -3) - npc.frailty * 0.9 - exposure,
-        0,
-        100,
-      );
-      if (npc.needs.health <= 0) {
-        this.killNpc(npc, 'ev.diedOfIllness', { name: npc.name, illness: 'ev.exposure' });
+      const short = clamp01((45 - npc.needs.hunger) / 45);
+      npc.body.starve(short * 0.03 + exposure * 0.012);
+      npc.body.advance(1, clamp01(npc.needs.hunger / 100), care, this.rng);
+
+      const failed = npc.body.failure();
+      if (failed) {
+        this.killNpc(
+          npc,
+          failed === 'wasting' ? 'ev.diedOfHunger' : 'ev.diedOfInjury',
+          { name: npc.name },
+        );
         continue;
       }
       npc.updateMood();
-      if (npc.needs.hunger <= 0 && npc.needs.health <= 2) {
-        this.killNpc(npc, 'ev.diedOfHunger', { name: npc.name });
-      }
     }
   }
 
@@ -423,7 +428,7 @@ export class World {
    * same thing that would happen if every footstep were simulated.
    */
   private foodGrownPerDay(): number {
-    const adults = this.npcs.filter((n) => n.age >= WORKING_AGE && n.needs.health > 20);
+    const adults = this.npcs.filter((n) => n.age >= WORKING_AGE && n.condition > 20);
     if (adults.length === 0) return 0;
 
     const season = this.time.snapshot().season;
@@ -464,7 +469,7 @@ export class World {
   private huntGame(want: number): number {
     if (want <= 0) return 0;
     const s = this.settlement;
-    const adults = this.npcs.filter((n) => n.age >= WORKING_AGE && n.needs.health > 20);
+    const adults = this.npcs.filter((n) => n.age >= WORKING_AGE && n.condition > 20);
     if (adults.length === 0) return 0;
     const hunters =
       adults.filter((n) => n.profession === 'hunter' || n.profession === 'fisher').length +
@@ -2051,15 +2056,22 @@ export class World {
     const options: (() => void)[] = [];
 
     options.push(() => {
+      // A good year for the hedgerows. What this cannot do is conjure the
+      // hedgerows: it fills what is already growing out there, so a district
+      // that has been stripped bare stays stripped bare and a settlement
+      // cannot be rescued from a famine by a lucky roll.
+      let refreshed = 0;
+      this.nodeGrid.forEachNear(s.centre.x, s.centre.z, s.radius + 60, (n) => {
+        if (refreshed >= 14) return;
+        if (!RESOURCES[n.kind].yields.some((y) => isFood(y.item))) return;
+        if (!n.depleted && n.amount >= n.maxAmount) return;
+        n.depleted = false;
+        n.amount = n.maxAmount;
+        n.regrowIn = -1;
+        refreshed++;
+      });
+      if (refreshed === 0) return;
       this.log.add(this.time, 'discovery', 'ev.goodForaging');
-      let planted = 0;
-      for (let i = 0; i < 24 && planted < 12; i++) {
-        const a = this.rng.range(0, Math.PI * 2);
-        const r = this.rng.range(20, s.radius + 40);
-        const x = s.centre.x + Math.cos(a) * r;
-        const z = s.centre.z + Math.sin(a) * r;
-        if (this.plantSapling('berry_bush', x, z)) planted++;
-      }
     });
 
     if (this.buildings.some((b) => b.complete)) {
@@ -2476,8 +2488,8 @@ export class World {
     const bite = this.famineSeverity * hours * 0.5;
     for (const npc of this.npcs) {
       if (npc.needs.hunger > 45) continue;
-      npc.needs.health = clamp(npc.needs.health - bite, 0, 100);
-      if (npc.needs.health <= 0) {
+      npc.body.starve(bite * 0.012);
+      if (npc.body.failure() === 'wasting') {
         this.killNpc(npc, 'ev.diedOfHunger', { name: npc.name });
       }
     }
@@ -2743,6 +2755,7 @@ export class World {
       homeId: n.homeId,
       workplaceId: n.workplaceId,
       needs: { ...n.needs },
+      body: n.body.serialize(),
       skills: { ...n.skillXp } as Record<string, number>,
       inventory: n.inventory.serialize(),
       money: n.money,
@@ -2777,6 +2790,9 @@ export class World {
       npc.homeId = r.homeId;
       npc.workplaceId = r.workplaceId;
       Object.assign(npc.needs, r.needs);
+      // Old saves carry no body. An untouched one is the right answer for
+      // somebody who has been walking around perfectly well all along.
+      npc.body.restore(r.body);
       npc.skillXp = { ...(r.skills as Record<string, number>) };
       const inv = Inventory.deserialize(r.inventory, npc.inventory.weightLimit);
       for (let i = 0; i < npc.inventory.slots.length && i < inv.slots.length; i++) {

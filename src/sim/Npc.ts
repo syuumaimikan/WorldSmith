@@ -6,12 +6,13 @@
  * person carries stays easy to read, serialise and inspect in the UI.
  */
 
+import { Body } from './Body';
 import { ItemId } from '../data/items';
 import { ProfessionId, SkillId, ALL_SKILLS, levelFromXp, skillMultiplier } from '../data/professions';
 import { Inventory } from './Inventory';
 import { PathPoint } from './Navigation';
 import { Rng } from '../core/rng';
-import { clamp01 } from '../core/math';
+import { clamp, clamp01 } from '../core/math';
 
 export type NpcActivity =
   | 'idle'
@@ -111,7 +112,11 @@ export interface NpcNeeds {
   rest: number;
   social: number;
   comfort: number;
-  health: number;
+  /**
+   * Deliberately absent: there is no health here any more. A person's state
+   * is their body -- see `Npc.condition`, which reads it rather than storing
+   * a number things can subtract from.
+   */
   /** 0..100 general contentment, derived from the others. */
   mood: number;
 }
@@ -157,7 +162,25 @@ export class Npc {
   /** The one tool this person carries, if any. */
   tool: ItemId | null = null;
 
-  needs: NpcNeeds = { hunger: 82, rest: 88, social: 70, comfort: 60, health: 100, mood: 70 };
+  needs: NpcNeeds = { hunger: 82, rest: 88, social: 70, comfort: 60, mood: 70 };
+
+  /**
+   * Limbs, wounds, infection and what going without has done. Nothing writes
+   * a health figure; things break specific parts of this, and what that adds
+   * up to is read back out of it.
+   */
+  readonly body = new Body();
+
+  /**
+   * How badly off they are, 0..100. A readout of the body and of how hungry,
+   * rested and old they are -- not a pool, and nothing assigns to it.
+   */
+  get condition(): number {
+    const bodily = this.body.condition;
+    const hungry = clamp01(this.needs.hunger / 100);
+    const worn = 1 - this.frailty * 0.35;
+    return Math.round(clamp(bodily * (0.55 + hungry * 0.45) * worn, 0, 100));
+  }
   skillXp: Partial<Record<SkillId, number>> = {};
 
   path: PathPoint[] | null = null;
@@ -210,12 +233,13 @@ export class Npc {
   workRate(id: SkillId, toolBonus = 1): number {
     const base = skillMultiplier(this.skill(id));
     const fatigue = 0.62 + clamp01(this.needs.rest / 100) * 0.38;
-    const health = 0.55 + clamp01(this.needs.health / 100) * 0.45;
+    const health = 0.55 + clamp01(this.condition / 100) * 0.45;
+    const hands = 0.45 + this.body.dexterity * 0.55;
     // The old are slower. Not useless -- an old hand knows the work -- but
     // slower, and it is their own years that decide it rather than a number
     // that applies to everyone at sixty.
     const years = 1 - this.frailty * 0.45;
-    return base * toolBonus * fatigue * health * years;
+    return base * toolBonus * fatigue * health * hands * years;
   }
 
   addXp(id: SkillId, amount: number): void {
@@ -261,7 +285,7 @@ export class Npc {
   updateMood(): void {
     const n = this.needs;
     const raw =
-      n.hunger * 0.32 + n.rest * 0.24 + n.social * 0.14 + n.comfort * 0.16 + n.health * 0.14;
+      n.hunger * 0.32 + n.rest * 0.24 + n.social * 0.14 + n.comfort * 0.16 + this.condition * 0.14;
     this.needs.mood = raw;
   }
 
