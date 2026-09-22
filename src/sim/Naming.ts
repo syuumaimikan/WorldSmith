@@ -153,6 +153,42 @@ export class Namer {
     return this.unique(rng.pick(forms));
   }
 
+  /**
+   * A faith is named for the thing at the centre of it, so a sect that splits
+   * off can be given the same stem and come out sounding like what it broke
+   * from — which is exactly how it sounds to the people arguing about it.
+   */
+  faithName(key: string | number, stem: string): string {
+    const rng = this.rngFor(`faith:${key}`);
+    const forms = [
+      `The Way of ${stem}`,
+      `The ${stem} Rite`,
+      `The ${stem} Path`,
+      `${stem}ism`,
+      `The Keepers of ${stem}`,
+    ];
+    return this.unique(rng.pick(forms));
+  }
+
+  /**
+   * A root word that sounds like it came from another one: the head of the
+   * old word with a new ending grown onto it. A sect named this way is
+   * recognisably a sect of what it broke from.
+   */
+  stemVariant(key: string | number, stem: string): string {
+    const rng = this.rngFor(`stemvar:${key}`);
+    const keep = Math.max(2, Math.round(stem.length * 0.55));
+    const head = stem.slice(0, keep);
+    return capitalise(head + rng.pick(this.consonants) + rng.pick(this.vowels) + rng.pick(this.codas));
+  }
+
+  /** A people's name for themselves. */
+  cultureName(key: string | number): string {
+    const rng = this.rngFor(`culture:${key}`);
+    const root = this.root(rng);
+    return this.unique(rng.pick([`${root}i`, `${root}an`, `${root}ic`, root]));
+  }
+
   /** Stars and constellations get the same tongue as everything else. */
   skyName(key: string | number): string {
     const rng = this.rngFor(`sky:${key}`);

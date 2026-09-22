@@ -11,7 +11,7 @@ import type { WorldEvent } from '../sim/EventLog';
 import type { SerializedInventory } from '../sim/Inventory';
 import type { GameSpeed } from '../sim/Time';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export interface SavedTerrain {
   gridSize: number;
@@ -134,6 +134,7 @@ export interface SaveData {
   tectonics: Record<string, unknown>;
   nations: Record<string, unknown>;
   diplomacy: Record<string, unknown>;
+  culture: Record<string, unknown>;
   disease: Record<string, unknown>;
   volcanoes: SavedVolcano[];
   economy: Record<string, unknown>;
@@ -204,6 +205,13 @@ export function migrate(raw: AnySave): SaveData {
     data.possessed = 0;
     data.lightningStrikes = 0;
     data.version = 5;
+  }
+  if (data.version < 6) {
+    // v5 worlds had nations but nothing those nations believed. They get a
+    // people and a faith the first time the world takes a step, founded the
+    // same way a new world's are.
+    data.culture = data.culture ?? {};
+    data.version = 6;
   }
 
   return data;

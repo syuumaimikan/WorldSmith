@@ -5,6 +5,7 @@ import { hexToCss, mixHex, PALETTE } from '../../render/Palette';
 import { clamp01 } from '../../core/math';
 import { useT } from '../../i18n';
 import { LAWS, LawId, Nation } from '../../sim/Nations';
+import { Religion, VALUE_IDS } from '../../sim/Culture';
 import { DAYS_PER_YEAR } from '../../sim/Time';
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
   onClose: () => void;
 }
 
-type NationTab = 'us' | 'world' | 'wars';
+type NationTab = 'us' | 'world' | 'wars' | 'faith';
 
 const ALL_LAWS = Object.keys(LAWS) as LawId[];
 
@@ -27,6 +28,7 @@ export function NationPanel({ game, onClose }: Props): JSX.Element {
           { id: 'us', label: t('nation.tab.us') },
           { id: 'world', label: t('nation.tab.world') },
           { id: 'wars', label: t('dip.wars') },
+          { id: 'faith', label: t('nation.tab.faith') },
         ]}
         active={tab}
         onChange={setTab}
@@ -34,6 +36,7 @@ export function NationPanel({ game, onClose }: Props): JSX.Element {
       {tab === 'us' && <UsTab game={game} />}
       {tab === 'world' && <WorldTab game={game} />}
       {tab === 'wars' && <WarsTab game={game} />}
+      {tab === 'faith' && <FaithTab game={game} />}
     </Window>
   );
 }
@@ -274,6 +277,130 @@ function WarsTab({ game }: { game: Game }): JSX.Element {
       )}
     </>
   );
+}
+
+/**
+ * What our people value, what they believe, and who else believes it. The
+ * figures a faith names are the constellations this world's sky actually has
+ * in it, so the panel points at them rather than describing them.
+ */
+function FaithTab({ game }: { game: Game }): JSX.Element {
+  const t = useT();
+  const world = game.world;
+  const mine = world.nations.playerNation;
+  if (!mine) return <EmptyNote>-</EmptyNote>;
+
+  const culture = world.culture.cultureFor(mine.id);
+  const faith = world.culture.faithFor(mine.id);
+  const parent = faith && faith.schismOf !== 0
+    ? world.culture.religions.find((r) => r.id === faith.schismOf)
+    : undefined;
+
+  return (
+    <>
+      <div className="section-label" style={{ marginTop: 0 }}>
+        {t('culture.people')}
+      </div>
+      {culture === null ? (
+        <EmptyNote>-</EmptyNote>
+      ) : (
+        <>
+          <div style={{ marginBottom: 6 }}>{t('culture.of', { name: culture.name })}</div>
+          <div className="tiny muted" style={{ marginBottom: 6 }}>
+            {t('culture.values')}
+          </div>
+          {VALUE_IDS.map((id) => (
+            <TraitBar key={id} label={t(`value.${id}`)} value={culture.values[id]} good />
+          ))}
+        </>
+      )}
+
+      <div className="section-label">{t('faith.title')}</div>
+      {!faith ? (
+        <EmptyNote>{t('faith.none')}</EmptyNote>
+      ) : (
+        <>
+          <div style={{ marginBottom: 2 }}>{faith.name}</div>
+          <div className="tiny muted" style={{ marginBottom: 8 }}>
+            {t(`faith.kind.${faith.kind}`)} ·{' '}
+            {t('faith.founded', { year: Math.floor(faith.foundedDay / DAYS_PER_YEAR) + 1 })}
+            {parent && ` · ${t('faith.splitFrom', { name: parent.name })}`}
+          </div>
+          <TraitBar
+            label={t('faith.fervour')}
+            value={world.culture.fervourOf(mine.id)}
+            good
+          />
+
+          <div className="tiny muted" style={{ margin: '8px 0 4px' }}>
+            {t('faith.deities')}
+          </div>
+          <div className="list">
+            {faith.deities.map((d) => (
+              <div key={d.name} className="list-row" style={{ gridTemplateColumns: '1fr' }}>
+                <span className="tiny">
+                  {t('faith.deity', { name: d.name, domain: t(`sky.domain.${d.domain}`) })}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="tiny muted" style={{ margin: '8px 0 4px' }}>
+            {t('faith.tenets')}
+          </div>
+          <div className="list">
+            {[...faith.tenets].map((id) => (
+              <div key={id} className="list-row" style={{ gridTemplateColumns: '1fr' }}>
+                <div>
+                  <div>{t(`tenet.${id}`)}</div>
+                  <div className="tiny muted" style={{ lineHeight: 1.5 }}>
+                    {t(`tenet.${id}.desc`)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            className="btn small ghost"
+            style={{ marginTop: 8 }}
+            onClick={() => game.lookAt(faith.holyX, faith.holyZ)}
+          >
+            {t('faith.holySite')}
+          </button>
+        </>
+      )}
+
+      <div className="section-label">{t('faith.world')}</div>
+      {world.culture.religions.length === 0 ? (
+        <EmptyNote>-</EmptyNote>
+      ) : (
+        <div className="list">
+          {world.culture.religions
+            .slice()
+            .sort((a, b) => held(b) - held(a))
+            .map((r) => (
+              <div key={r.id} className="list-row" style={{ gridTemplateColumns: '1fr 90px' }}>
+                <div>
+                  <div>{r.name}</div>
+                  <div className="tiny muted">{t(`faith.kind.${r.kind}`)}</div>
+                </div>
+                <span className="tiny mono muted">
+                  {t('faith.followerCount', { count: held(r) })}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Peoples who actually keep a faith, rather than merely having heard of it. */
+function held(r: Religion): number {
+  let count = 0;
+  for (const hold of r.followers.values()) if (hold > 0.2) count++;
+  return count;
 }
 
 function StabilityPill({ nation }: { nation: Nation }): JSX.Element {

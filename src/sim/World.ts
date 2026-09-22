@@ -46,6 +46,7 @@ import { Tectonics } from './Tectonics';
 import { Astronomy } from './Astronomy';
 import { NationSystem } from './Nations';
 import { DiplomacySystem } from './Diplomacy';
+import { CultureSystem } from './Culture';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
@@ -121,6 +122,7 @@ export class World {
   readonly astronomy: Astronomy;
   readonly nations: NationSystem;
   readonly diplomacy: DiplomacySystem;
+  readonly culture: CultureSystem;
   readonly disease: DiseaseSystem;
   /**
    * How hard the settlement is rationing, 0 when there is plenty. A famine is
@@ -192,6 +194,7 @@ export class World {
     this.astronomy = new Astronomy(config.seed, this.namer);
     this.nations = new NationSystem(terrain, config.seed, this.namer);
     this.diplomacy = new DiplomacySystem(config.seed);
+    this.culture = new CultureSystem(config.seed, this.namer);
     this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
@@ -210,6 +213,9 @@ export class World {
     this.nations.foundPlayerNation(this);
     const room = Math.round((this.terrain.worldSize / 420) * 3);
     this.nations.seedForeignNations(this, Math.max(2, Math.min(6, room)));
+    // Every one of them arrives with a people and a faith of its own, built
+    // out of the figures this world's sky happens to have in it.
+    this.culture.seed(this);
     this.settlement.foundedDay = this.time.totalDays;
     this.spawnStartingSettlers();
     this.spawnWildlife();
@@ -1701,6 +1707,7 @@ export class World {
     this.tectonics.update(this, hours);
     this.nations.update(this, hours);
     this.diplomacy.update(this, hours);
+    this.culture.update(this, hours);
     this.updateSky();
     this.director.update(this, hours);
     this.disease.update(this, hours);
