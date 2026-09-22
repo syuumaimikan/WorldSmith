@@ -47,6 +47,12 @@ export interface WorldEvent {
 const MAX_EVENTS = 800;
 
 export class EventLog {
+  /**
+   * Called for everything that happens, so the long memory can decide what is
+   * worth keeping at the moment it happens rather than trawling a feed that
+   * has already thrown most of it away.
+   */
+  readonly onAdd: ((e: WorldEvent) => void)[] = [];
   private events: WorldEvent[] = [];
   private nextId = 1;
   /** Events added since the UI last drained them, for toast notifications. */
@@ -79,12 +85,13 @@ export class EventLog {
       this.pendingToasts.push(ev);
       if (this.pendingToasts.length > 8) this.pendingToasts.shift();
     }
+    for (const fn of this.onAdd) fn(ev);
     return ev;
   }
 
   /** Pre-history written at world generation, before the clock starts. */
   addHistory(text: string): void {
-    this.events.push({
+    const ev: WorldEvent = {
       id: this.nextId++,
       day: -1,
       year: 0,
@@ -94,7 +101,9 @@ export class EventLog {
       key: '',
       literal: text,
       notable: false,
-    });
+    };
+    this.events.push(ev);
+    for (const fn of this.onAdd) fn(ev);
   }
 
   all(): readonly WorldEvent[] {

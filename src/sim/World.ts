@@ -47,6 +47,7 @@ import { Astronomy } from './Astronomy';
 import { NationSystem } from './Nations';
 import { DiplomacySystem } from './Diplomacy';
 import { CultureSystem } from './Culture';
+import { Chronicle } from './History';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
@@ -123,6 +124,7 @@ export class World {
   readonly nations: NationSystem;
   readonly diplomacy: DiplomacySystem;
   readonly culture: CultureSystem;
+  readonly history = new Chronicle();
   readonly disease: DiseaseSystem;
   /**
    * How hard the settlement is rationing, 0 when there is plenty. A famine is
@@ -204,6 +206,7 @@ export class World {
     this.player.placeOnGround(terrain);
 
     this.time.onNewDay.push((day) => this.onNewDay(day));
+    this.watchLog();
   }
 
   /** Called once after a fresh world is generated. */
@@ -243,6 +246,16 @@ export class World {
 
   replaceLog(log: EventLog): void {
     this.log = log;
+    this.watchLog();
+  }
+
+  /**
+   * The chronicle reads every event as it happens. It has to be re-attached
+   * when a save brings a different log with it, or a loaded world would stop
+   * remembering anything from the moment it was loaded.
+   */
+  private watchLog(): void {
+    this.log.onAdd.push((e) => this.history.note(e));
   }
 
   // =======================================================================
@@ -1708,6 +1721,7 @@ export class World {
     this.nations.update(this, hours);
     this.diplomacy.update(this, hours);
     this.culture.update(this, hours);
+    this.history.update(this, hours);
     this.updateSky();
     this.director.update(this, hours);
     this.disease.update(this, hours);

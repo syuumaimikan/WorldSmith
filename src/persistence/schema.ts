@@ -135,6 +135,7 @@ export interface SaveData {
   nations: Record<string, unknown>;
   diplomacy: Record<string, unknown>;
   culture: Record<string, unknown>;
+  history: Record<string, unknown>;
   disease: Record<string, unknown>;
   volcanoes: SavedVolcano[];
   economy: Record<string, unknown>;
@@ -211,6 +212,7 @@ export function migrate(raw: AnySave): SaveData {
     // people and a faith the first time the world takes a step, founded the
     // same way a new world's are.
     data.culture = data.culture ?? {};
+    data.history = data.history ?? {};
     data.version = 6;
   }
 

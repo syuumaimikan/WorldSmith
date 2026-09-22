@@ -70,6 +70,7 @@ export function serializeWorld(world: World, id: string): SaveData {
     nations: world.nations.serialize(),
     diplomacy: world.diplomacy.serialize(),
     culture: world.culture.serialize(),
+    history: world.history.serialize(),
     disease: world.disease.serialize(),
     volcanoes: world.volcanoes.map((v) => ({ ...v })),
     economy: world.economy.serialize(),
@@ -161,6 +162,7 @@ export function deserializeWorld(data: SaveData): World {
   if (data.culture && Object.keys(data.culture).length > 0) {
     world.culture.restore(data.culture);
   }
+  world.history.restore(data.history);
   world.disease.restore(data.disease);
   world.restoreVolcanoes(data.volcanoes ?? []);
   world.economy.restore(data.economy);
