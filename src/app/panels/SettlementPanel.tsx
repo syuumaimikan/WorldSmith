@@ -137,11 +137,11 @@ export function SettlementPanel({ game, onClose }: Props): JSX.Element {
               {world.economy.bottlenecks.map((b, i) => (
                 <div className="list-row" key={i} style={{ gridTemplateColumns: '1fr auto', marginBottom: 5 }}>
                   <div>
-                    <div>{b.text}</div>
-                    <div className="tiny muted">{b.detail}</div>
+                    <div>{t(b.key, b.params)}</div>
+                    <div className="tiny muted">{t(b.detailKey, b.params)}</div>
                   </div>
                   <Pill tone={b.severity === 'critical' ? 'bad' : b.severity === 'warn' ? 'warn' : undefined}>
-                    {b.severity}
+                    {t(`severity.${b.severity}`)}
                   </Pill>
                 </div>
               ))}

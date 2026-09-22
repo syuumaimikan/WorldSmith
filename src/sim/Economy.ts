@@ -27,10 +27,20 @@ export type BottleneckKind =
   | 'homeless'
   | 'idle_workshop';
 
+/**
+ * What is holding the settlement up, said in keys rather than in words.
+ *
+ * The simulation does not know what language anybody reads. It reports which
+ * problem it found and the numbers involved; the HUD is where that turns into
+ * a sentence.
+ */
 export interface Bottleneck {
   kind: BottleneckKind;
-  text: string;
-  detail: string;
+  /** Translation key for the one-line summary. */
+  key: string;
+  /** Translation key for the explanation behind it. */
+  detailKey: string;
+  params?: Record<string, string | number>;
   severity: 'info' | 'warn' | 'critical';
   buildingId?: number;
   item?: ItemId;
@@ -126,15 +136,17 @@ export class Economy {
     if (population > 0 && foodDays < 2) {
       out.push({
         kind: 'starving',
-        text: 'Food is running out',
-        detail: `Less than ${foodDays.toFixed(1)} days of food in store. People will start to starve.`,
+        key: 'bottleneck.starving',
+        detailKey: 'bottleneck.starving.detail',
+        params: { days: foodDays.toFixed(1) },
         severity: 'critical',
       });
     } else if (population > 0 && foodDays < 5) {
       out.push({
         kind: 'starving',
-        text: 'Food stores are low',
-        detail: `About ${foodDays.toFixed(1)} days of food remain.`,
+        key: 'bottleneck.foodLow',
+        detailKey: 'bottleneck.foodLow.detail',
+        params: { days: foodDays.toFixed(1) },
         severity: 'warn',
       });
     }
@@ -142,8 +154,9 @@ export class Economy {
     if (homeless > 0) {
       out.push({
         kind: 'homeless',
-        text: `${homeless} ${homeless === 1 ? 'person has' : 'people have'} nowhere to sleep`,
-        detail: 'People without a home rest badly and get sick. Build more housing.',
+        key: 'bottleneck.homeless',
+        detailKey: 'bottleneck.homeless.detail',
+        params: { count: homeless },
         severity: homeless > population * 0.4 ? 'critical' : 'warn',
       });
     }
@@ -152,15 +165,15 @@ export class Economy {
     if (stores.length === 0 && buildings.some((b) => b.complete)) {
       out.push({
         kind: 'no_storage',
-        text: 'Nowhere to store goods',
-        detail: 'Without a stockpile or warehouse, harvested goods stay where they fell.',
+        key: 'bottleneck.noStorage',
+        detailKey: 'bottleneck.noStorage.detail',
         severity: 'warn',
       });
     } else if (stores.length > 0 && stores.every((s) => s.inventory.fullness > 0.96)) {
       out.push({
         kind: 'storage_full',
-        text: 'Storage is full',
-        detail: 'Haulers have nowhere to put anything. Build more storage.',
+        key: 'bottleneck.storageFull',
+        detailKey: 'bottleneck.storageFull.detail',
         severity: 'warn',
       });
     }
@@ -168,8 +181,8 @@ export class Economy {
     if (haulerCount === 0 && buildings.filter((b) => b.complete).length > 2) {
       out.push({
         kind: 'no_haulers',
-        text: 'Nobody is hauling',
-        detail: 'Goods will sit where they are produced. Assign someone as a hauler.',
+        key: 'bottleneck.noHaulers',
+        detailKey: 'bottleneck.noHaulers.detail',
         severity: 'warn',
       });
     }
@@ -191,8 +204,9 @@ export class Economy {
       if (worst) {
         out.push({
           kind: 'no_material',
-          text: `Construction waiting on ${ITEMS[worst[0]].name.toLowerCase()}`,
-          detail: `${stalledSites} ${stalledSites === 1 ? 'site needs' : 'sites need'} materials delivered. ${worst[1]} ${ITEMS[worst[0]].name.toLowerCase()} short.`,
+          key: 'bottleneck.noMaterial',
+          detailKey: 'bottleneck.noMaterial.detail',
+          params: { sites: stalledSites, short: worst[1] },
           severity: 'info',
           item: worst[0],
         });
@@ -205,8 +219,8 @@ export class Economy {
       if (b.workerIds.length === 0) {
         out.push({
           kind: 'no_workers',
-          text: `${b.def.name} has no workers`,
-          detail: 'Assign someone to it from the Jobs panel, or it will produce nothing.',
+          key: 'bottleneck.noWorkers',
+          detailKey: 'bottleneck.noWorkers.detail',
           severity: 'info',
           buildingId: b.id,
         });

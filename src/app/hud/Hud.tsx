@@ -165,9 +165,9 @@ export function Hud({
                         ? hexToCss(PALETTE.ui.warn)
                         : undefined,
                 }}
-                title={b.detail}
+                title={t(b.detailKey, b.params)}
               >
-                • {b.text}
+                • {t(b.key, b.params)}
               </div>
             ))}
           </div>

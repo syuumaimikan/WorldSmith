@@ -116,6 +116,21 @@ describe('nothing the player reads is written in English in the code', () => {
     }
   });
 
+  it('reports what is holding the settlement up through the dictionary', () => {
+    // These lines sit in the corner of the HUD where the player looks when
+    // something is wrong, and they were English prose built in the simulation
+    // for a year before anybody noticed.
+    const world = buildTestWorld();
+    world.economy.diagnose(world.buildings, 0, 0.5, 6, world.npcs.length);
+    expect(world.economy.bottlenecks.length).toBeGreaterThan(0);
+    for (const b of world.economy.bottlenecks) {
+      expect(en[b.key], `no English for ${b.key}`).toBeDefined();
+      expect(ja[b.key], `no Japanese for ${b.key}`).toBeDefined();
+      expect(en[b.detailKey], `no English for ${b.detailKey}`).toBeDefined();
+      expect(ja[b.detailKey], `no Japanese for ${b.detailKey}`).toBeDefined();
+    }
+  });
+
   it('has a Japanese string for every event the world can log', () => {
     // Every key the simulation passes to the log must be translatable; a key
     // with no entry would surface to the player as a bare identifier.

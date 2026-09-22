@@ -680,6 +680,31 @@ export const en: Record<string, string> = {
   'disaster.severity.moderate': 'Moderate',
   'disaster.severity.major': 'Major',
   'disaster.severity.catastrophic': 'Catastrophic',
+  'severity.info': 'note',
+  'severity.warn': 'warning',
+  'severity.critical': 'critical',
+  'bottleneck.starving': 'Food is running out',
+  'bottleneck.starving.detail':
+    'Less than {days} days of food in store. People will start to starve.',
+  'bottleneck.foodLow': 'Food stores are low',
+  'bottleneck.foodLow.detail': 'About {days} days of food remain.',
+  'bottleneck.homeless': '{count} with nowhere to sleep',
+  'bottleneck.homeless.detail':
+    'People without a home rest badly and get sick. Build more housing.',
+  'bottleneck.noStorage': 'Nowhere to store goods',
+  'bottleneck.noStorage.detail':
+    'Without a stockpile or warehouse, harvested goods stay where they fell.',
+  'bottleneck.storageFull': 'Storage is full',
+  'bottleneck.storageFull.detail': 'Haulers have nowhere to put anything. Build more storage.',
+  'bottleneck.noHaulers': 'Nobody is hauling',
+  'bottleneck.noHaulers.detail':
+    'Goods will sit where they are produced. Assign someone as a hauler.',
+  'bottleneck.noMaterial': 'Construction is waiting on materials',
+  'bottleneck.noMaterial.detail':
+    '{sites} sites need materials delivered, and are {short} short.',
+  'bottleneck.noWorkers': 'A workshop has nobody in it',
+  'bottleneck.noWorkers.detail':
+    'Assign someone to it from the Jobs panel, or it will produce nothing.',
   'event.earthquake': 'The ground shakes. {damaged} buildings are damaged.',
   'ev.skyfallSeen': 'A light crosses the sky, and it is getting brighter.',
   'ev.seaDrawsBack': 'The sea is going out. It is going out much too far.',
