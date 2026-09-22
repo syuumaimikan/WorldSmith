@@ -14,7 +14,7 @@ import { Building } from '../sim/Building';
 import { Npc } from '../sim/Npc';
 import { ITEMS, ItemId } from '../data/items';
 import { t } from '../i18n';
-import { buildingName, itemName, resourceName, professionName } from '../i18n/names';
+import { buildingName, itemName, resourceName, professionName, carryingSummary } from '../i18n/names';
 import { buildingStatus } from '../i18n/status';
 
 export type TargetKind = 'node' | 'pile' | 'building' | 'npc' | 'none';
@@ -323,7 +323,7 @@ export function greeting(npc: Npc, world: World): string {
 
   switch (npc.activity) {
     case 'hauling':
-      lines.push(t('talk.hauling', { goods: npc.carryingSummary() }));
+      lines.push(t('talk.hauling', { goods: carryingSummary(npc.carrying()) }));
       break;
     case 'building': {
       const site = world.buildingById.get(npc.task.targetId);

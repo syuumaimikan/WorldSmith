@@ -18,6 +18,8 @@ import {
   seasonName,
   tierName,
   weatherName,
+  buildingStatus,
+  carryingSummary,
 } from '../../i18n/names';
 
 export type PanelId =
@@ -346,7 +348,7 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
         </div>
         <div className="kv">
           <span>{t('insp.carrying')}</span>
-          <span className="mono tiny">{npc.carryingSummary()}</span>
+          <span className="mono tiny">{carryingSummary(npc.carrying())}</span>
         </div>
         <div className="kv">
           <span>{t('insp.home')}</span>
@@ -375,7 +377,7 @@ function Inspector({ game }: { game: Game }): JSX.Element | null {
     return (
       <div className="panel inspector">
         <h4>{buildingName(b.defId)}</h4>
-        <div className="sub">{b.statusText()}</div>
+        <div className="sub">{buildingStatus(b.status())}</div>
         {!b.complete && (
           <>
             <div className="kv">

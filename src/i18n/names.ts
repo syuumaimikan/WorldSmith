@@ -101,3 +101,19 @@ export function priorityName(priority: number): string {
 export function itemList(entries: { item: ItemId; amount: number }[]): string {
   return entries.map((e) => `${e.amount} ${itemName(e.item)}`).join(', ');
 }
+
+/** Turns a building's status into a sentence in the player's language. */
+export function buildingStatus(status: {
+  key: string;
+  stage?: StageId;
+  stageName?: string;
+}): string {
+  if (status.stage === undefined) return t(status.key);
+  return t(status.key, { stage: stageName(status.stage, status.stageName ?? '') });
+}
+
+/** Turns a carried load into a phrase, or says there is nothing. */
+export function carryingSummary(load: { item: ItemId; count: number }[]): string {
+  if (load.length === 0) return t('common.nothing');
+  return load.map((s) => t('common.countOf', { count: s.count, item: itemName(s.item) })).join(', ');
+}

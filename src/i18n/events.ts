@@ -39,6 +39,11 @@ const asResearch: Resolver = (v) => researchName(v as ResearchId);
 const asSeason: Resolver = (v) => seasonName(v as Season);
 const asWeather: Resolver = (v) => weatherName(v as WeatherKind).toLowerCase();
 const asTier: Resolver = (v) => tierName(v as SettlementTier);
+/**
+ * Landmark lore is stored as a key. Worlds saved before it was a key hold the
+ * English prose itself, so anything that is not a key is passed through.
+ */
+const asLore: Resolver = (v) => (v.startsWith('poi.lore.') ? t(v) : v);
 
 const RESOLVERS: Record<string, Record<string, Resolver>> = {
   'ev.blueprint': { name: asBuilding },
@@ -53,6 +58,7 @@ const RESOLVERS: Record<string, Record<string, Resolver>> = {
   'ev.seasonArrives': { season: asSeason },
   'ev.weatherTurns': { weather: asWeather },
   'ev.promoted': { tier: asTier },
+  'ev.discovered': { lore: asLore },
   'ev.repaired': { name: asBuilding },
   'event.eruption': { name: (v) => v },
 };

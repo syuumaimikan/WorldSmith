@@ -209,10 +209,9 @@ export class Npc {
     this.relationships.set(otherId, Math.max(-100, Math.min(100, cur + delta)));
   }
 
-  carryingSummary(): string {
-    const s = this.inventory.summary();
-    if (s.length === 0) return 'Nothing';
-    return s.map((st) => `${st.count} ${st.item.replace(/_/g, ' ')}`).join(', ');
+  /** What this person is carrying, as data. The i18n layer makes it a phrase. */
+  carrying(): { item: ItemId; count: number }[] {
+    return this.inventory.summary().map((st) => ({ item: st.item, count: st.count }));
   }
 
   isCarrying(): boolean {

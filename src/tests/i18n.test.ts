@@ -13,6 +13,8 @@ import { getLocale, missingKeys, setLocale, t, tName } from '../i18n';
 import { ALL_ITEM_IDS, ITEMS } from '../data/items';
 import { ALL_BUILDING_IDS, BUILDINGS } from '../data/buildings';
 import { ALL_PROFESSIONS } from '../data/professions';
+import { buildingStatus, carryingSummary } from '../i18n/names';
+import { buildTestWorld, placeNear } from './harness';
 
 const PLACEHOLDER = /\{(\w+)\}/g;
 
@@ -73,5 +75,54 @@ describe('localization', () => {
     expect(t('hud.build')).not.toBe('Build');
     setLocale('en');
     expect(t('hud.build')).toBe('Build');
+  });
+});
+
+describe('nothing the player reads is written in English in the code', () => {
+  it('reports a building status through the dictionary, not as prose', () => {
+    const world = buildTestWorld();
+    const b = placeNear(world, 'stockpile', world.settlement.centre.x, world.settlement.centre.z);
+    expect(b).not.toBeNull();
+
+    const status = b!.status();
+    expect(status.key.startsWith('status.')).toBe(true);
+    expect(en[status.key], `no English for ${status.key}`).toBeDefined();
+
+    setLocale('ja');
+    const japanese = buildingStatus(status);
+    setLocale('en');
+    const english = buildingStatus(status);
+    // The two must differ, or the Japanese is just the English passed through.
+    expect(japanese).not.toBe(english);
+    expect(japanese).not.toBe(status.key);
+  });
+
+  it('describes a carried load through the dictionary', () => {
+    setLocale('ja');
+    const empty = carryingSummary([]);
+    const load = carryingSummary([{ item: 'log', count: 3 }]);
+    setLocale('en');
+    expect(empty).toBe(ja['common.nothing']);
+    expect(load).not.toBe(carryingSummary([{ item: 'log', count: 3 }]));
+  });
+
+  it('stores landmark lore as a key so it reads in the player language', () => {
+    const world = buildTestWorld();
+    expect(world.pois.length).toBeGreaterThan(0);
+    for (const poi of world.pois) {
+      expect(poi.lore.startsWith('poi.lore.'), `raw prose in lore: ${poi.lore}`).toBe(true);
+      expect(en[poi.lore], `no English for ${poi.lore}`).toBeDefined();
+      expect(ja[poi.lore], `no Japanese for ${poi.lore}`).toBeDefined();
+    }
+  });
+
+  it('has a Japanese string for every event the world can log', () => {
+    // Every key the simulation passes to the log must be translatable; a key
+    // with no entry would surface to the player as a bare identifier.
+    for (const [key, value] of Object.entries(en)) {
+      if (!key.startsWith('ev.') && !key.startsWith('event.')) continue;
+      expect(ja[key], `event not translated: ${key}`).toBeDefined();
+      expect(value.length).toBeGreaterThan(0);
+    }
   });
 });

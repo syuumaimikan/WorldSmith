@@ -271,37 +271,20 @@ function placeVeins(
   return veins;
 }
 
-const POI_LORE: Record<PointOfInterest['kind'], string[]> = {
-  ruin: [
-    'Stone footings and a collapsed hearth. Someone built here once, and left.',
-    'Half a wall still stands. The roof beams rotted away generations ago.',
-    'A doorway with no house behind it.',
-  ],
-  cave: [
-    'A cold draught comes out of the dark, even at noon.',
-    'The entrance is half-blocked by fallen rock.',
-    'Old soot marks the ceiling near the mouth.',
-  ],
-  tower: [
-    'A watchtower, or what remains of one. It sees a long way.',
-    'Someone once thought this hill worth guarding.',
-  ],
-  camp: [
-    'A ring of stones around cold ash. Abandoned, but not long ago.',
-    'Cut stakes and a rotted canvas. A camp that was meant to be temporary, and was.',
-  ],
-  grove: [
-    'The trees here grew undisturbed for a very long time.',
-    'Unusually old timber. Felling it would be a shame, and profitable.',
-  ],
-  monolith: [
-    'A standing stone, deliberately placed. No one remembers by whom.',
-    'Weathered marks cover one face. They might be writing.',
-  ],
-  shipwreck: [
-    'Ribs of a hull, pushed up the beach by some old storm.',
-    'Salt-bleached timber, still sound enough to salvage.',
-  ],
+/**
+ * How many lines of lore each kind of landmark has. The lines themselves live
+ * in the dictionaries under `poi.lore.<kind>.<n>`, because what a ruin looks
+ * like has to read in whatever language the player is playing in — storing the
+ * prose in the world data would bake English into every save.
+ */
+const POI_LORE_COUNT: Record<PointOfInterest['kind'], number> = {
+  ruin: 3,
+  cave: 3,
+  tower: 2,
+  camp: 2,
+  grove: 2,
+  monolith: 2,
+  shipwreck: 2,
 };
 
 function placePois(
@@ -370,7 +353,7 @@ function placePois(
       x,
       z,
       name,
-      lore: rng.pick(POI_LORE[kind]),
+      lore: `poi.lore.${kind}.${rng.int(0, POI_LORE_COUNT[kind] - 1)}`,
       discovered: false,
     });
   }

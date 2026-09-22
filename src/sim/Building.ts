@@ -7,7 +7,7 @@
  * blueprint to finished building that does not pass through both.
  */
 
-import { BuildingDef, BuildingId, buildingDef, ConstructionStage } from '../data/buildings';
+import { BuildingDef, BuildingId, buildingDef, ConstructionStage, StageId } from '../data/buildings';
 import { ItemId } from '../data/items';
 import { RecipeId } from '../data/recipes';
 import { Inventory } from './Inventory';
@@ -359,17 +359,27 @@ export class Building {
     return true;
   }
 
-  statusText(): string {
-    if (this.demolishing) return 'Being demolished';
-    if (this.repairNeeded) return this.readyToRepair() ? 'Under repair' : 'Awaiting repair materials';
+  /**
+   * What this building is doing, as a key and its parameters rather than as a
+   * sentence. The simulation should never decide what language the player
+   * reads; `buildingStatus` in the i18n layer turns this into words.
+   */
+  status(): { key: string; stage?: StageId; stageName?: string } {
+    if (this.demolishing) return { key: 'status.demolishing' };
+    if (this.repairNeeded) {
+      return { key: this.readyToRepair() ? 'status.repairing' : 'status.awaitingRepair' };
+    }
     if (this.complete) {
-      if (this.paused) return 'Paused';
-      if (this.def.workSlots > 0 && this.workerIds.length === 0) return 'No workers';
-      return 'Operating';
+      if (this.paused) return { key: 'status.paused' };
+      if (this.def.workSlots > 0 && this.workerIds.length === 0) return { key: 'status.noWorkers' };
+      return { key: 'status.operating' };
     }
     const s = this.currentStage;
-    if (!s) return 'Complete';
-    if (!this.readyForWork()) return `Awaiting materials — ${s.name}`;
-    return s.name;
+    if (!s) return { key: 'status.complete' };
+    return {
+      key: this.readyForWork() ? 'status.working' : 'status.awaitingMaterials',
+      stage: s.id,
+      stageName: s.name,
+    };
   }
 }
