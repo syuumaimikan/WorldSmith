@@ -151,6 +151,9 @@ export interface Nation {
 /** Cells across the map for territorial claims. Coarser than terrain, finer than plates. */
 const CLAIM_CELLS = 48;
 
+/** More than this and the map is a patchwork nobody can read or care about. */
+const MAX_NATIONS = 9;
+
 /** People a cell of average land will feed. */
 const PEOPLE_PER_CELL = 26;
 
@@ -204,8 +207,82 @@ export class NationSystem {
     );
     nation.population = world.npcs.length;
     this.nations.push(nation);
-    this.claimAround(nation, 2);
+
+    // The settlers are physically standing here. In an old world somebody may
+    // already call this ground theirs, and the settlers put their tents up on
+    // it regardless -- which is a thing the people who held it will notice.
+    const displaced = this.claimAround(nation, 2, true);
+    for (const [id, cells] of displaced) {
+      const loser = this.byId(id);
+      if (!loser) continue;
+      world.diplomacy.relation(nation.id, loser.id).opinion -= 6 + cells * 3;
+      world.log.add(world.time, 'settlement', 'ev.settledOnClaim', { nation: loser.name }, {
+        notable: true,
+        x: centre.x,
+        z: centre.z,
+      });
+    }
     return nation;
+  }
+
+  /**
+   * A new people comes into being.
+   *
+   * Empty habitable land does not stay empty for four hundred years. When
+   * there is room on the map and nobody standing on it, somebody eventually
+   * is: a band that drifted out of a crowded neighbour, a valley that stopped
+   * answering to anyone. Without this a long world only ever loses countries,
+   * and a thousand years of it ends in one survivor by arithmetic.
+   */
+  private considerNewPeoples(world: World, days: number): void {
+    if (this.nations.length >= MAX_NATIONS) return;
+
+    // How much of the map is land nobody claims.
+    let free = 0;
+    let land = 0;
+    for (let i = 0; i < this.claims.length; i++) {
+      const cx = i % CLAIM_CELLS;
+      const cz = Math.floor(i / CLAIM_CELLS);
+      if (!this.landCell(cx, cz)) continue;
+      land++;
+      if (this.claims[i] === 0) free++;
+    }
+    if (land === 0) return;
+    const openness = free / land;
+    if (openness < 0.25) return;
+
+    // Rare: about once a century when half the map is still open.
+    if (!this.rng.chance(clamp01(days * 0.00006 * (openness - 0.2) * 4))) return;
+
+    const t = this.terrain;
+    const minGap = t.worldSize * 0.18;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const x = this.rng.range(t.worldSize * 0.05, t.worldSize * 0.95);
+      const z = this.rng.range(t.worldSize * 0.05, t.worldSize * 0.95);
+      if (!this.habitable(x, z)) continue;
+      const cell = this.cellIndexAt(x, z);
+      if (cell < 0 || this.claims[cell] !== 0) continue;
+      if (this.nations.some((n) => Math.hypot(n.x - x, n.z - z) < minGap)) continue;
+
+      const nation = this.makeNation(
+        this.namer.nationName(`${this.nextId}:${Math.round(world.time.totalDays)}`),
+        x,
+        z,
+        this.rng.pick<Government>(['chiefdom', 'chiefdom', 'monarchy', 'confederation']),
+        world.time.totalDays,
+        false,
+      );
+      nation.population = this.rng.int(30, 90);
+      nation.treasury = nation.population * this.rng.range(0.2, 0.8);
+      this.nations.push(nation);
+      this.claimAround(nation, 2);
+      world.log.add(world.time, 'settlement', 'ev.nationFounded', { name: nation.name }, {
+        notable: true,
+        x,
+        z,
+      });
+      return;
+    }
   }
 
   /**
@@ -329,7 +406,16 @@ export class NationSystem {
   }
 
   /** Claims out to a radius in cells, skipping water and other people's land. */
-  private claimAround(nation: Nation, radiusCells: number): void {
+  /**
+   * Claims the cells around a capital. With `take`, ground somebody else holds
+   * is taken as well; the return value says who lost how much of it.
+   */
+  private claimAround(
+    nation: Nation,
+    radiusCells: number,
+    take = false,
+  ): Map<number, number> {
+    const lost = new Map<number, number>();
     const cx = clamp(Math.floor(nation.x / this.cellSize), 0, CLAIM_CELLS - 1);
     const cz = clamp(Math.floor(nation.z / this.cellSize), 0, CLAIM_CELLS - 1);
     for (let dz = -radiusCells; dz <= radiusCells; dz++) {
@@ -339,12 +425,22 @@ export class NationSystem {
         const z = cz + dz;
         if (x < 0 || z < 0 || x >= CLAIM_CELLS || z >= CLAIM_CELLS) continue;
         const i = z * CLAIM_CELLS + x;
-        if (this.claims[i] !== 0) continue;
         if (!this.landCell(x, z)) continue;
+
+        const held = this.claims[i];
+        if (held !== 0) {
+          if (!take) continue;
+          const owner = this.byId(held);
+          if (owner) {
+            owner.territory = Math.max(0, owner.territory - 1);
+            lost.set(held, (lost.get(held) ?? 0) + 1);
+          }
+        }
         this.claims[i] = nation.id;
         nation.territory++;
       }
     }
+    return lost;
   }
 
   /** Nobody claims open water; a border stops at the shore. */
@@ -447,6 +543,7 @@ export class NationSystem {
     for (const nation of [...this.nations]) {
       this.updateNation(world, nation, days);
     }
+    this.considerNewPeoples(world, days);
   }
 
   private updateNation(world: World, nation: Nation, days: number): void {

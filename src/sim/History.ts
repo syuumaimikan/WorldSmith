@@ -207,6 +207,8 @@ export class Chronicle {
   private nextAgeId = 1;
   private lastSnapshotDay = -1e9;
   private lastReviewDay = -1e9;
+  /** Where the world's running total of war days stood at the last look. */
+  private lastWarDays = 0;
   private tally: Tally = {
     warDays: 0,
     days: 0,
@@ -278,17 +280,26 @@ export class Chronicle {
     const day = world.time.totalDays;
     const days = hours / 24;
     this.tally.days += days;
-    if (world.diplomacy.wars.length > 0) this.tally.warDays += days;
+    // However coarsely the world is being stepped, this is the real number of
+    // days there was a war on, not the number of times there happened to be
+    // one when the chronicle looked.
+    const warDays = world.diplomacy.warDays;
+    this.tally.warDays += Math.max(0, warDays - this.lastWarDays);
+    this.lastWarDays = warDays;
 
     if (this.ages.length === 0) {
       this.ages.push({
         id: this.nextAgeId++,
         kind: 'founding',
-        subject: world.config.name,
+        // The player's own settlement, when the record opens with it. In an
+        // ancient world it will not exist for another three hundred years, so
+        // the first age belongs to whoever was actually the great power then.
+        subject: world.nations.playerNation?.name ?? this.subjectFor(world, 'founding'),
         startDay: day,
         endDay: -1,
       });
       this.tally.populationAtStart = worldPopulation(world);
+      this.tally.warDays = 0;
       this.lastReviewDay = day;
       this.lastSnapshotDay = day;
       this.snapshots.push(this.snapshot(world));
@@ -457,6 +468,7 @@ export class Chronicle {
       })),
       lastSnapshotDay: this.lastSnapshotDay,
       lastReviewDay: this.lastReviewDay,
+      lastWarDays: this.lastWarDays,
       tally: { ...this.tally },
     };
   }
@@ -552,6 +564,7 @@ export class Chronicle {
     for (const a of this.annals) this.nextAnnalId = Math.max(this.nextAnnalId, a.id + 1);
     this.lastSnapshotDay = num(data.lastSnapshotDay, -1e9);
     this.lastReviewDay = num(data.lastReviewDay, -1e9);
+    this.lastWarDays = Math.max(0, num(data.lastWarDays, 0));
 
     const raw = (data.tally ?? {}) as Record<string, unknown>;
     this.tally = {

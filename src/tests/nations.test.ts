@@ -292,8 +292,10 @@ describe('laws', () => {
     const measure = (withLaw: boolean): number => {
       const world = buildTestWorld(makeTestConfig({ seedText: 'lawtest' }));
       const n = world.nations.nations.find((x) => !x.isPlayer)!;
-      n.unrest = 0.5;
-      n.taxRate = 0.4;
+      // Badly governed, but not so badly that unrest is pinned at its
+      // ceiling in both runs and the law has nowhere to show.
+      n.unrest = 0.2;
+      n.taxRate = 0.3;
       n.leader.cruelty = 0.9; // stop the ruler easing the tax instead
       n.leader.competence = 0.3;
       if (withLaw) n.laws.add('landReform');

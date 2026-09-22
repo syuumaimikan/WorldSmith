@@ -82,7 +82,7 @@ export const ja: Record<string, string> = {
   'gen.forests': '森を育てている',
   'gen.deposits': '鉱床を配置している',
   'gen.history': '過去を思い出している',
-  'gen.prehistory': '幾星霜を経ている',
+  'gen.prehistory': '幾星霜を経ている——{year}年',
 
   'flavour.1': '川は最も低い土地を見つけ、他のすべてはその川に従う。',
   'flavour.2': '森は雨の届くところに育ち、砂漠は山の影に横たわる。',
@@ -709,6 +709,7 @@ export const ja: Record<string, string> = {
 
   // ---------------------------------------------------------- world events
   'ev.founded': '{name}が創設された。入植者{count}人が、運べるだけの物資を携えて到着した。',
+  'ev.settledOnClaim': 'この土地は{nation}が領有していた。それでも民は天幕を張った。',
   'ev.blueprint': '{name}の縄張りを行った。',
   'ev.stageDone': '{name}: {stage}が完了。',
   'ev.completed': '{name}が完成した。',

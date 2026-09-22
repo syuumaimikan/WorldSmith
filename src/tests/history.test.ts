@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildTestWorld } from './harness';
 import type { World } from '../sim/World';
+import type { Nation } from '../sim/Nations';
 import { Snapshot } from '../sim/History';
 import { DAYS_PER_YEAR } from '../sim/Time';
 import { deserializeWorld, serializeWorld } from '../persistence/serialize';
@@ -17,10 +18,19 @@ import { migrate, SaveData, validate } from '../persistence/schema';
 
 type AnySave = SaveData & Record<string, unknown>;
 
-/** Runs `days` of world history and nothing else. */
-function runYears(world: World, years: number): void {
+/**
+ * Runs `years` of world history. Politics runs alongside it, because the
+ * chronicle is a record of what the rest of the world did and there is nothing
+ * to record otherwise.
+ */
+function runYears(world: World, years: number, keepAtWar?: [Nation, Nation]): void {
   for (let d = 0; d < years * DAYS_PER_YEAR; d++) {
     world.time.advance(24 * 12);
+    if (keepAtWar && world.diplomacy.warsOf(keepAtWar[0].id).length === 0) {
+      world.diplomacy.declareWar(world, keepAtWar[0], keepAtWar[1], 'conquest');
+    }
+    world.nations.update(world, 24);
+    world.diplomacy.update(world, 24);
     world.history.update(world, 24);
   }
 }
@@ -90,9 +100,8 @@ describe('the ages of the world', () => {
     const world = buildTestWorld();
     runYears(world, 1);
     const [a, b] = world.nations.nations;
-    world.diplomacy.declareWar(world, a, b, 'conquest');
-
-    runYears(world, 20);
+    // Twenty years in which this world is never not at war.
+    runYears(world, 20, [a, b]);
 
     const ages = world.history.ages;
     expect(ages.length).toBeGreaterThan(1);
@@ -114,8 +123,7 @@ describe('the ages of the world', () => {
     const world = buildTestWorld();
     runYears(world, 1);
     const [a, b] = world.nations.nations;
-    world.diplomacy.declareWar(world, a, b, 'conquest');
-    runYears(world, 20);
+    runYears(world, 20, [a, b]);
 
     const wartime = world.history.ages.find((x) => x.kind === 'war')!;
     world.log.add(world.time, 'politics', 'ev.battle', { name: a.name });
@@ -140,7 +148,8 @@ describe('the map as it was', () => {
 
   it('records the claims the nations were actually holding', () => {
     const world = buildTestWorld();
-    runYears(world, 1);
+    // One step, so the first snapshot is taken and nothing has moved since.
+    world.history.update(world, 24);
     const shot = world.history.snapshots[0];
     expect(shot.cells).toBe(world.nations.cells);
     expect(shot.claims.length).toBe(world.nations.claims.length);

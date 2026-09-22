@@ -15,11 +15,15 @@ import {
 } from '../world/types';
 import type { WorldGenMessage, WorldGenPayload } from '../world/worldgenTypes';
 import { World } from '../sim/World';
+import { ANCIENT_YEARS, preSimulate } from '../sim/Presimulate';
 import { hashString } from '../core/rng';
 
 export interface GenerationProgress {
+  /** A translation key, so the loading screen reads in the player's language. */
   stage: string;
   fraction: number;
+  /** Substituted into `stage`, for stages that count something. */
+  params?: Record<string, string | number>;
 }
 
 export interface NewWorldOptions {
@@ -78,7 +82,11 @@ export function generate(
   });
 }
 
-export function assembleWorld(config: WorldConfig, payload: WorldGenPayload): World {
+export async function assembleWorld(
+  config: WorldConfig,
+  payload: WorldGenPayload,
+  onProgress?: (p: GenerationProgress) => void,
+): Promise<World> {
   const data: TerrainData = {
     gridSize: payload.gridSize,
     tileSize: payload.tileSize,
@@ -113,8 +121,36 @@ export function assembleWorld(config: WorldConfig, payload: WorldGenPayload): Wo
   );
 
   for (const line of payload.historyLines) world.log.addHistory(line);
+
+  // The other peoples of the world go in first, because an ancient world has
+  // to have somebody to spend its centuries on.
+  const ancient = config.era === 'ancient';
+  world.seedNeighbours(ancient);
+  if (ancient) await liveOutTheAges(world, onProgress);
+
   // Settlers, wildlife and starting supplies only exist for a brand new world;
   // a loaded save brings its own.
-  world.bootstrap();
+  world.settle();
   return world;
+}
+
+/**
+ * Runs the pre-simulation in slices, handing the thread back between them so
+ * the loading screen can show the centuries actually going by rather than
+ * freezing on one frame for the duration.
+ */
+async function liveOutTheAges(
+  world: World,
+  onProgress?: (p: GenerationProgress) => void,
+): Promise<void> {
+  const slices = 20;
+  for (let i = 0; i < slices; i++) {
+    preSimulate(world, ANCIENT_YEARS / slices);
+    onProgress?.({
+      stage: 'gen.prehistory',
+      fraction: (i + 1) / slices,
+      params: { year: world.time.snapshot().year },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+  }
 }

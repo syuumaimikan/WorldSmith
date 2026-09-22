@@ -24,6 +24,13 @@ export type Treaty = 'none' | 'nonAggression' | 'trade' | 'alliance';
 export interface Relation {
   /** -100 hatred, +100 devotion. */
   opinion: number;
+  /**
+   * How raw the last war still is, 0..1. Separate from the tally of wars
+   * fought, because that only ever goes up: a world where two countries can
+   * never again be anything but enemies once they have fought is a world that
+   * locks into permanent war by arithmetic, which is not what happens.
+   */
+  grudge: number;
   treaty: Treaty;
   /** Game days left on a truce that forbids war. */
   truceDays: number;
@@ -45,7 +52,18 @@ export interface War {
   /** -1 the defender is winning, +1 the attacker is. */
   warScore: number;
   battles: number;
+  /** Days each side has had nothing in the field. */
+  attackerIdle: number;
+  defenderIdle: number;
 }
+
+/**
+ * How long a side may have nothing in the field before the war is over for
+ * it. A country that cannot raise an army does not therefore get a war that
+ * never happened: the other side marches in, and the days it takes to do that
+ * are the days counted here.
+ */
+const ABANDONED_DAYS = 24;
 
 export type ArmyStance = 'marching' | 'besieging' | 'defending' | 'returning';
 
@@ -74,6 +92,9 @@ export interface Army {
 /** Game hours between diplomatic and military updates. */
 const STEP_HOURS = 24;
 
+/** The most time any one pass of the war machinery may cover. */
+const MAX_STEP_DAYS = 1;
+
 /** Metres an army covers in a day. */
 const MARCH_SPEED = 26;
 
@@ -83,6 +104,12 @@ const ENGAGE_RANGE = 22;
 export class DiplomacySystem {
   readonly wars: War[] = [];
   readonly armies: Army[] = [];
+  /**
+   * Days this world has spent with a war somewhere on it. Counted here rather
+   * than sampled by whoever is interested, because a war can begin and end
+   * between two glances and still have been a war.
+   */
+  warDays = 0;
   /** Relations by "lowId:highId". */
   private relations = new Map<string, Relation>();
 
@@ -107,7 +134,7 @@ export class DiplomacySystem {
     const k = this.key(a, b);
     let r = this.relations.get(k);
     if (!r) {
-      r = { opinion: 0, treaty: 'none', truceDays: 0, wars: 0 };
+      r = { opinion: 0, grudge: 0, treaty: 'none', truceDays: 0, wars: 0 };
       this.relations.set(k, r);
     }
     return r;
@@ -137,17 +164,27 @@ export class DiplomacySystem {
   update(world: World, hours: number): void {
     this.pending += hours;
     if (this.pending < STEP_HOURS) return;
-    const days = this.pending / 24;
-    this.pending = 0;
 
-    const nations = world.nations.nations;
-    if (nations.length < 2) return;
+    // Handed a week at once -- which happens when the world is being run fast,
+    // and every step of the time while an ancient world lives itself out --
+    // this works through it a day at a time. Taking it in one pass would march
+    // an army a third of the way across the world between one battle and the
+    // next, pile up a week of weariness before a shot was fired, and settle
+    // wars that were never actually fought.
+    while (this.pending >= STEP_HOURS) {
+      const days = Math.min(MAX_STEP_DAYS, this.pending / 24);
+      this.pending -= days * 24;
 
-    this.driftOpinions(world, nations, days);
-    this.considerWars(world, nations, days);
-    this.moveArmies(world, days);
-    this.resolveEngagements(world, days);
-    this.considerPeace(world, days);
+      const nations = world.nations.nations;
+      if (nations.length < 2) continue;
+      if (this.wars.length > 0) this.warDays += days;
+
+      this.driftOpinions(world, nations, days);
+      this.considerWars(world, nations, days);
+      this.moveArmies(world, days);
+      this.resolveEngagements(world, days);
+      this.considerPeace(world, days);
+    }
   }
 
   /**
@@ -177,17 +214,20 @@ export class DiplomacySystem {
         // has signed anything. Without this nothing could ever warm enough to
         // sign a treaty, and nothing but treaties could warm it — which would
         // leave every nation in the world a permanent stranger to every other.
-        if (r.truceDays <= 0) drift += 0.07;
+        if (r.truceDays <= 0) drift += 0.09;
         if (r.treaty === 'trade') drift += 0.12;
         if (r.treaty === 'alliance') drift += 0.2;
         if (r.treaty === 'nonAggression') drift += 0.05;
         // Two peoples governed the same way understand each other better.
         if (a.government === b.government) drift += 0.04;
-        // A neighbour who has been at war with you before is not forgotten.
-        drift -= r.wars * 0.03;
+        // The last war is not forgotten, but it does fade: about a
+        // generation for one war's worth of it, and it stacks while they
+        // keep coming.
+        r.grudge = Math.max(0, r.grudge - 0.0006 * days);
+        drift -= r.grudge * 0.25;
         // An ambitious neighbour with an army is watched uneasily.
         const threat = (n: Nation): number => n.leader.ambition * clamp01(n.army / 120);
-        drift -= (threat(a) + threat(b)) * 0.06;
+        drift -= (threat(a) + threat(b)) * 0.035;
 
         r.opinion = clamp(r.opinion + drift * days, -100, 100);
 
@@ -337,11 +377,14 @@ export class DiplomacySystem {
       defenderExhaustion: 0,
       warScore: 0,
       battles: 0,
+      attackerIdle: 0,
+      defenderIdle: 0,
     };
     this.wars.push(war);
 
     const r = this.relation(attacker.id, defender.id);
     r.wars++;
+    r.grudge = clamp01(r.grudge + 0.35);
     r.treaty = 'none';
     r.opinion = clamp(r.opinion - 40, -100, 100);
 
@@ -366,8 +409,10 @@ export class DiplomacySystem {
     targetZ: number,
     stance: ArmyStance,
   ): Army | null {
+    // Even a valley with fifty people in it puts somebody on the road. What
+    // it cannot do is put out anything that will survive meeting a kingdom.
     const strength = Math.floor(nation.army * 0.7);
-    if (strength < 4) return null;
+    if (strength < 2) return null;
     nation.army -= strength;
     const army: Army = {
       id: this.nextArmyId++,
@@ -672,18 +717,22 @@ export class DiplomacySystem {
       // plainest form of winning there is, and it tells in the terms.
       const attackerArmies = this.armiesOf(attacker.id).length;
       const defenderArmies = this.armiesOf(defender.id).length;
+      war.attackerIdle = attackerArmies > 0 ? 0 : war.attackerIdle + days;
+      war.defenderIdle = defenderArmies > 0 ? 0 : war.defenderIdle + days;
       if (attackerArmies > 0 && defenderArmies === 0) {
-        war.warScore = clamp(war.warScore + 0.02 * days, -1, 1);
+        war.warScore = clamp(war.warScore + 0.025 * days, -1, 1);
       } else if (defenderArmies > 0 && attackerArmies === 0) {
-        war.warScore = clamp(war.warScore - 0.02 * days, -1, 1);
+        war.warScore = clamp(war.warScore - 0.025 * days, -1, 1);
       }
 
       // A war wears on the people fighting it whether or not they are winning.
       attacker.unrest = clamp01(attacker.unrest + war.attackerExhaustion * 0.002 * days);
       defender.unrest = clamp01(defender.unrest + war.defenderExhaustion * 0.002 * days);
 
-      const attackerDone = war.attackerExhaustion > 0.7 || attackerArmies === 0;
-      const defenderDone = war.defenderExhaustion > 0.7 || defenderArmies === 0;
+      const attackerDone =
+        war.attackerExhaustion > 0.7 || war.attackerIdle > ABANDONED_DAYS;
+      const defenderDone =
+        war.defenderExhaustion > 0.7 || war.defenderIdle > ABANDONED_DAYS;
       const decided = Math.abs(war.warScore) > 0.75;
 
       if (!attackerDone && !defenderDone && !decided) continue;
@@ -753,6 +802,7 @@ export class DiplomacySystem {
 
   serialize(): Record<string, unknown> {
     return {
+      warDays: this.warDays,
       wars: this.wars.map((w) => ({ ...w })),
       armies: this.armies.map((a) => ({ ...a })),
       relations: [...this.relations.entries()].map(([k, r]) => ({ k, ...r })),
@@ -761,6 +811,9 @@ export class DiplomacySystem {
 
   restore(data: Record<string, unknown> | undefined): void {
     if (!data) return;
+    if (typeof data.warDays === 'number' && Number.isFinite(data.warDays)) {
+      this.warDays = Math.max(0, data.warDays);
+    }
     this.wars.length = 0;
     this.armies.length = 0;
     this.relations.clear();
@@ -779,6 +832,8 @@ export class DiplomacySystem {
           defender: Math.round(num(raw.defender, 0)),
           goal: raw.goal as WarGoal,
           startedDay: Math.max(0, num(raw.startedDay, 0)),
+          attackerIdle: Math.max(0, num(raw.attackerIdle, 0)),
+          defenderIdle: Math.max(0, num(raw.defenderIdle, 0)),
           attackerExhaustion: clamp01(num(raw.attackerExhaustion, 0)),
           defenderExhaustion: clamp01(num(raw.defenderExhaustion, 0)),
           warScore: clamp(num(raw.warScore, 0), -1, 1),
@@ -816,6 +871,7 @@ export class DiplomacySystem {
         if (!/^\d+:\d+$/.test(raw.k)) continue;
         this.relations.set(raw.k, {
           opinion: clamp(num(raw.opinion, 0), -100, 100),
+          grudge: clamp01(num(raw.grudge, 0)),
           treaty: treaties.includes(raw.treaty as Treaty) ? (raw.treaty as Treaty) : 'none',
           truceDays: Math.max(0, num(raw.truceDays, 0)),
           wars: Math.max(0, Math.round(num(raw.wars, 0))),

@@ -452,9 +452,13 @@ export class CultureSystem {
 
         // A people already sure of their own faith are hard to move, and a
         // people who have nothing in common with the missionary harder still.
+        // The rate is deliberately slow: a faith should take three or four
+        // generations to settle on a neighbour and centuries to cross a
+        // continent, because anything quicker ends every world with one
+        // religion and nothing to argue about.
         const resistance =
-          1 + this.fervourOf(nation.id) * 1.5 + this.culturalDistance(nation.id, other.id) * 2;
-        const pull = (contact * zeal * theirHold * days * 0.0018 * (1 - here)) / resistance;
+          1 + this.fervourOf(nation.id) * 2.5 + this.culturalDistance(nation.id, other.id) * 3;
+        const pull = (contact * zeal * theirHold * days * 0.0008 * (1 - here)) / resistance;
         if (pull <= 0) continue;
         gains.set(theirs.id, (gains.get(theirs.id) ?? 0) + pull);
       }
@@ -647,6 +651,9 @@ export class CultureSystem {
     const live = new Set(world.nations.nations.map((n) => n.id));
     for (const r of this.religions) {
       for (const id of [...r.followers.keys()]) {
+        // A people who no longer exist keep nothing. A handful of converts do
+        // stay on the books, because that is what a faith arriving somewhere
+        // looks like on its first day and it has to be allowed to grow.
         if (!live.has(id)) r.followers.delete(id);
       }
     }

@@ -79,7 +79,7 @@ export const en: Record<string, string> = {
   'gen.forests': 'Growing forests',
   'gen.deposits': 'Placing mineral deposits',
   'gen.history': 'Remembering the past',
-  'gen.prehistory': 'Living out the ages',
+  'gen.prehistory': 'Living out the ages — year {year}',
 
   'flavour.1': 'A river finds the lowest ground, and everything else follows the river.',
   'flavour.2': 'Forests grow where the rain reaches; deserts sit in the shadow of mountains.',
@@ -709,6 +709,7 @@ export const en: Record<string, string> = {
 
   // ---------------------------------------------------------- world events
   'ev.founded': '{name} is founded. {count} settlers arrive with what they could carry.',
+  'ev.settledOnClaim': 'This ground was held by {nation}. Your people have put their tents up on it anyway.',
   'ev.blueprint': '{name} marked out for construction.',
   'ev.stageDone': '{name}: {stage} complete.',
   'ev.completed': '{name} completed.',

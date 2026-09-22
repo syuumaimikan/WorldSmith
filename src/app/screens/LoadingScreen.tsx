@@ -33,7 +33,7 @@ export function LoadingScreen({ progress }: Props): JSX.Element {
           World<em>Smith</em>
         </h1>
       </div>
-      <div className="loading-stage">{t(progress.stage)}</div>
+      <div className="loading-stage">{t(progress.stage, progress.params)}</div>
       <div className="loading-bar">
         <div style={{ width: `${pct}%` }} />
       </div>

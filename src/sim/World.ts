@@ -211,16 +211,43 @@ export class World {
 
   /** Called once after a fresh world is generated. */
   bootstrap(): void {
-    // The people who are here become a polity, and the world gets neighbours.
-    // How many depends on how much room there is for them.
-    this.nations.foundPlayerNation(this);
+    this.seedNeighbours(false);
+    this.settle();
+  }
+
+  /**
+   * The other peoples of the world, and what they believe.
+   *
+   * How many depends on how much room there is for them, and an ancient world
+   * gets more: it is about to spend three centuries whittling them down, and a
+   * history that ends with one survivor by arithmetic is not a history.
+   */
+  seedNeighbours(crowded: boolean): void {
     const room = Math.round((this.terrain.worldSize / 420) * 3);
-    this.nations.seedForeignNations(this, Math.max(2, Math.min(6, room)));
+    const count = crowded
+      ? Math.max(4, Math.min(8, room * 2))
+      : Math.max(2, Math.min(6, room));
+    this.nations.seedForeignNations(this, count);
     // Every one of them arrives with a people and a faith of its own, built
     // out of the figures this world's sky happens to have in it.
     this.culture.seed(this);
+  }
+
+  /**
+   * The player's people arrive and put their tents up.
+   *
+   * In a fresh world this follows immediately. In an ancient one it happens
+   * after the centuries have been lived out, which is the whole reason it is
+   * a separate step: the settlers are new, the world they are walking into is
+   * not.
+   */
+  settle(): void {
+    // The people come first, then the polity: a nation is the people in it,
+    // and one founded before them starts life with nobody in it.
     this.settlement.foundedDay = this.time.totalDays;
     this.spawnStartingSettlers();
+    this.nations.foundPlayerNation(this);
+    this.culture.seed(this);
     this.spawnWildlife();
     this.giveStartingSupplies();
     this.log.add(

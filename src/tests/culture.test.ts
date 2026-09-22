@@ -173,54 +173,73 @@ describe('a faith travelling', () => {
 
 describe('a faith breaking in two', () => {
   it('produces a sect that keeps what it came from and argues about one thing', () => {
-    let sects = 0;
-    for (const seedText of ['split', 'schism', 'rift']) {
-      const world = buildTestWorld(makeTestConfig({ seedText }));
-      const seen = new Set(world.culture.religions.map((r) => r.id));
+    const world = buildTestWorld();
+    const [a, b] = world.nations.nations.filter((n) => !n.isPlayer);
+    const shared = world.culture.faithFor(a.id)!;
 
-      for (let step = 0; step < 240; step++) {
-        runBelief(world, DAYS_PER_YEAR);
-        for (const r of world.culture.religions) {
-          if (seen.has(r.id)) continue;
-          seen.add(r.id);
-          expect(r.schismOf, r.name).not.toBe(0);
-          const parent = world.culture.religions.find((p) => p.id === r.schismOf);
-          if (!parent) continue;
-          sects++;
-
-          // The same figures in the sky, read the same way.
-          expect(r.kind).toBe(parent.kind);
-          expect(r.deities.map((d) => d.name)).toEqual(parent.deities.map((d) => d.name));
-          // And exactly one thing asked of the faithful that differs.
-          expect(difference(r, parent)).toBe(1);
-          expect(r.tenets.size).toBeGreaterThan(0);
-          // It still sounds like what it broke from, and is not it.
-          expect(r.name).not.toBe(parent.name);
-        }
-      }
+    // The same faith kept at opposite ends of the world by two peoples who
+    // agree about nothing and have been at war for as long as anyone can
+    // remember. It does not stay one faith.
+    for (const r of world.culture.religions) r.followers.delete(b.id);
+    shared.followers.set(b.id, 0.9);
+    world.culture.faithOf.set(b.id, shared.id);
+    const ca = world.culture.cultureFor(a.id)!;
+    const cb = world.culture.cultureFor(b.id)!;
+    for (const id of VALUE_IDS) {
+      ca.values[id] = 0.9;
+      cb.values[id] = 0.1;
     }
-    expect(sects).toBeGreaterThan(0);
+
+    let sect: Religion | undefined;
+    for (let year = 0; year < 400 && !sect; year++) {
+      for (let d = 0; d < DAYS_PER_YEAR; d++) {
+        world.time.advance(24 * 12);
+        if (!world.diplomacy.atWar(a.id, b.id)) {
+          world.diplomacy.declareWar(world, a, b, 'conquest');
+        }
+        world.culture.update(world, 24);
+      }
+      sect = world.culture.religions.find((r) => r.schismOf === shared.id);
+    }
+
+    expect(sect, 'no sect in four hundred years of a faith at war with itself').toBeDefined();
+    // The same figures in the sky, read the same way.
+    expect(sect!.kind).toBe(shared.kind);
+    expect(sect!.deities.map((d) => d.name)).toEqual(shared.deities.map((d) => d.name));
+    // And exactly one thing asked of the faithful that differs.
+    expect(difference(sect!, shared)).toBe(1);
+    expect(sect!.tenets.size).toBeGreaterThan(0);
+    // It still sounds like what it broke from, and is not it.
+    expect(sect!.name).not.toBe(shared.name);
+    expect(sect!.stem).not.toBe(shared.stem);
+    // And one of the two peoples keeps it now.
+    expect([a.id, b.id]).toContain(
+      [...world.culture.faithOf].find(([, f]) => f === sect!.id)?.[0],
+    );
   });
 });
 
 describe('what a people hold worth doing', () => {
   it('moves with what has been happening to them', () => {
-    const world = buildTestWorld();
-    const [warlike, quiet] = world.nations.nations.filter((n) => !n.isPlayer);
-    const before = world.culture.cultureFor(warlike.id)!.values.martial;
-
-    for (let d = 0; d < DAYS_PER_YEAR * 300; d++) {
-      world.time.advance(24 * 12);
-      // One of them is never not at war; the other is never in one.
-      if (world.diplomacy.warsOf(warlike.id).length === 0) {
-        world.diplomacy.declareWar(world, warlike, quiet, 'conquest');
+    // The same world and the same people, three centuries apart in one
+    // respect only: whether they spent them fighting.
+    const martialAfterThreeCenturies = (fighting: boolean): number => {
+      const world = buildTestWorld();
+      const [them, neighbour] = world.nations.nations.filter((n) => !n.isPlayer);
+      for (let d = 0; d < DAYS_PER_YEAR * 300; d++) {
+        world.time.advance(24 * 12);
+        if (fighting && world.diplomacy.warsOf(them.id).length === 0) {
+          world.diplomacy.declareWar(world, them, neighbour, 'conquest');
+        }
+        world.culture.update(world, 24);
       }
-      world.culture.update(world, 24);
-    }
+      return world.culture.cultureFor(them.id)!.values.martial;
+    };
 
-    const after = world.culture.cultureFor(warlike.id)!.values.martial;
-    expect(after).toBeGreaterThan(before);
-    expect(after).toBeGreaterThan(world.culture.cultureFor(quiet.id)!.values.martial);
+    const atWar = martialAfterThreeCenturies(true);
+    const atPeace = martialAfterThreeCenturies(false);
+    expect(atWar).toBeGreaterThan(atPeace);
+    expect(atWar - atPeace).toBeGreaterThan(0.1);
   });
 
   it('does not make every people in the world identical given time', () => {

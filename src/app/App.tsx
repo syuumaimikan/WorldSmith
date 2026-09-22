@@ -47,7 +47,7 @@ export function App(): JSX.Element {
         const config = makeConfig(options);
         const payload = await generate(config, setProgress);
         setProgress({ stage: 'Waking the world', fraction: 1 });
-        const w = assembleWorld(config, payload);
+        const w = await assembleWorld(config, payload, setProgress);
         // Let the loading screen paint its final state before the heavy
         // scene build starts on the same thread.
         await new Promise((r) => setTimeout(r, 30));
