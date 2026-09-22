@@ -25,7 +25,7 @@ export function makeTestConfig(overrides: Partial<WorldConfig> = {}): WorldConfi
     seedText,
     seed: hashString(seedText),
     size: 'small',
-    gridSize: 256,
+    gridSize: 384,
     tileSize: 2,
     climate: 'temperate',
     resourceDensity: 1,

@@ -65,10 +65,16 @@ export interface WorldConfig {
   era: WorldEra;
 }
 
+/**
+ * Tiles per side. A world has to be big enough to hold more than one country
+ * and an ocean between them; at the old sizes a "continent" was four minutes'
+ * walk across. Terrain meshes are chunked and levelled by distance, so the
+ * cost of the extra ground is paid in generation time rather than in frames.
+ */
 export const WORLD_SIZE_TILES: Record<WorldSizePreset, number> = {
-  small: 320,
-  medium: 448,
-  large: 640,
+  small: 512,
+  medium: 768,
+  large: 1024,
 };
 
 export const TILE_SIZE = 2;

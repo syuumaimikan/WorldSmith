@@ -76,6 +76,8 @@ export interface JobContext {
   findSource: (item: ItemId, amount: number, x: number, z: number, excludeId: number) => Building | null;
   /** Finds the best store that will accept `item`, nearest to (x, z). */
   findDestination: (item: ItemId, x: number, z: number) => Building | null;
+  /** Whether that worker is still, in their own head, doing that job. */
+  holdsJob: (npcId: number, jobId: number) => boolean;
 }
 
 const MAX_HAUL_JOBS = 220;
@@ -153,8 +155,21 @@ export class JobBoard {
   // -------------------------------------------------------- reconciliation
 
   refresh(ctx: JobContext): void {
-    // 0. Release ground piles whose claimant no longer has a live job. Without
-    //    this, one abandoned haul task strands a pile forever.
+    // 0. Take back jobs from workers who are no longer doing them.
+    //
+    //    A worker drops a job for all sorts of ordinary reasons -- they got
+    //    hungry, night fell, the path was blocked -- and the board never heard
+    //    about it. An assigned job is exempt from expiry and its materials
+    //    stay reserved, so one forgotten delivery leaves a building site
+    //    waiting for three logs for ever while a hundred sit in the
+    //    stockpile. The board asks rather than assumes.
+    for (const j of this.jobs) {
+      if (j.assignedTo === 0) continue;
+      if (!ctx.holdsJob(j.assignedTo, j.id)) j.assignedTo = 0;
+    }
+
+    // 0b. Release ground piles whose claimant no longer has a live job.
+    //     Without this, one abandoned haul task strands a pile forever.
     const claimedPiles = new Set<number>();
     for (const j of this.jobs) {
       if (j.kind === 'haul' && j.sourceType === 'pile' && j.assignedTo !== 0) {

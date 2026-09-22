@@ -1629,6 +1629,7 @@ export class World {
       tileSize: this.terrain.tileSize,
       findSource: (item, _amount, x, z, exclude) => this.findSourceFor(item, x, z, exclude),
       findDestination: (item, x, z) => this.findDestinationFor(item, x, z),
+      holdsJob: (npcId, jobId) => this.npcById.get(npcId)?.task.jobId === jobId,
     };
   }
 

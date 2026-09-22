@@ -19,11 +19,13 @@
  */
 
 import { Rng } from '../core/rng';
-import { clamp, clamp01, TAU } from '../core/math';
+import { clamp, clamp01 } from '../core/math';
 import { Terrain } from '../world/Terrain';
+import { boundaryMotion, makePlates, PlateMap } from '../world/Plates';
+import type { BoundaryKind } from '../world/Plates';
 import type { World } from './World';
 
-export type BoundaryKind = 'convergent' | 'divergent' | 'transform';
+export type { BoundaryKind };
 
 export interface Plate {
   id: number;
@@ -59,9 +61,6 @@ export interface FaultSegment {
   lastRupture: number;
 }
 
-/** Plates per world. Few enough to read on a map, many enough to be varied. */
-const PLATE_COUNT = 7;
-
 /** Metres between fault sample points. */
 const SEGMENT_SPACING = 18;
 
@@ -73,12 +72,15 @@ export class Tectonics {
 
   private rng: Rng;
   private terrain: Terrain;
+  private seed: number;
+  private map!: PlateMap;
   private nextSegmentId = 1;
   /** Game hours of loading not yet applied, so slow drift is not lost. */
   private pending = 0;
 
   constructor(terrain: Terrain, seed: number, namePlate: (key: number) => string) {
     this.terrain = terrain;
+    this.seed = seed;
     this.rng = new Rng(seed ^ 0x7ec7);
     this.plateOf = new Uint8Array(terrain.gridSize * terrain.gridSize);
 
@@ -92,53 +94,22 @@ export class Tectonics {
   // =======================================================================
 
   private seedPlates(namePlate: (key: number) => string): void {
-    const size = this.terrain.worldSize;
-    for (let i = 0; i < PLATE_COUNT; i++) {
-      const x = this.rng.range(0, size);
-      const z = this.rng.range(0, size);
-      // Whether a plate is oceanic is not a coin flip: it is whether the
-      // ground it covers is mostly under water.
-      const angle = this.rng.range(0, TAU);
-      const speed = this.rng.range(8, 46);
-      this.plates.push({
-        id: i,
-        name: namePlate(i),
-        x,
-        z,
-        driftX: Math.cos(angle) * speed,
-        driftZ: Math.sin(angle) * speed,
-        oceanic: false,
-      });
+    // The same plates the generator raised the land from, rebuilt from the
+    // same seed. This is what makes the fault that shakes a town the fault
+    // that built the mountains behind it, rather than a second, unrelated set
+    // of lines drawn over a finished map.
+    for (const seed of makePlates(this.seed, this.terrain.worldSize)) {
+      this.plates.push({ ...seed, name: namePlate(seed.id) });
     }
+    this.map = new PlateMap(this.plates, this.seed, this.terrain.worldSize);
   }
 
   private assignTiles(): void {
     const t = this.terrain;
-    const submerged = new Array(this.plates.length).fill(0);
-    const total = new Array(this.plates.length).fill(0);
-
     for (let tz = 0; tz < t.gridSize; tz++) {
       for (let tx = 0; tx < t.gridSize; tx++) {
-        const wx = tx * t.tileSize;
-        const wz = tz * t.tileSize;
-        let best = 0;
-        let bestD = Infinity;
-        for (const p of this.plates) {
-          const d = (p.x - wx) * (p.x - wx) + (p.z - wz) * (p.z - wz);
-          if (d < bestD) {
-            bestD = d;
-            best = p.id;
-          }
-        }
-        const i = tz * t.gridSize + tx;
-        this.plateOf[i] = best;
-        total[best]++;
-        if (t.waterHeight[i] > t.data.height[i]) submerged[best]++;
+        this.plateOf[tz * t.gridSize + tx] = this.map.plateIdAt(tx * t.tileSize, tz * t.tileSize);
       }
-    }
-
-    for (const p of this.plates) {
-      p.oceanic = total[p.id] > 0 && submerged[p.id] / total[p.id] > 0.6;
     }
   }
 
@@ -159,26 +130,7 @@ export class Tectonics {
   }
 
   private addSegment(aId: number, bId: number, x: number, z: number): void {
-    const a = this.plates[aId];
-    const b = this.plates[bId];
-    // Relative motion, projected onto the line joining the two plate centres.
-    const nx = b.x - a.x;
-    const nz = b.z - a.z;
-    const len = Math.hypot(nx, nz) || 1;
-    const ux = nx / len;
-    const uz = nz / len;
-    const relX = b.driftX - a.driftX;
-    const relZ = b.driftZ - a.driftZ;
-    // Negative closing means they are moving toward one another.
-    const normal = relX * ux + relZ * uz;
-    const shear = Math.abs(relX * -uz + relZ * ux);
-
-    let kind: BoundaryKind;
-    if (normal < -6) kind = 'convergent';
-    else if (normal > 6) kind = 'divergent';
-    else kind = 'transform';
-
-    const closingRate = kind === 'transform' ? shear : Math.abs(normal);
+    const { kind, rate: closingRate } = boundaryMotion(this.plates[aId], this.plates[bId]);
 
     this.faults.push({
       id: this.nextSegmentId++,

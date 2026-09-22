@@ -75,11 +75,17 @@ describe('settlers', () => {
     expect(world.npcs.length).toBe(6);
 
     const pilesBefore = world.piles.length;
-    run(world, 900);
+    // Sampled through the run rather than read off the end of it. A single
+    // snapshot says what o'clock it is, not what these people do: taken at
+    // midnight everyone is asleep and the settlement looks dead.
+    const activities = new Set<string>();
+    for (let i = 0; i < 12; i++) {
+      run(world, 75);
+      for (const n of world.npcs) activities.add(n.activity);
+    }
 
-    // Someone should have harvested something in fifteen minutes of work.
+    // Someone should have harvested something in a day's work.
     expect(world.piles.length).toBeGreaterThan(pilesBefore);
-    const activities = new Set(world.npcs.map((n) => n.activity));
     expect(activities.size).toBeGreaterThan(1);
   });
 

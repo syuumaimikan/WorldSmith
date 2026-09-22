@@ -18,6 +18,7 @@ import { Noise2D, warp } from '../core/noise';
 import { Rng } from '../core/rng';
 import { clamp, clamp01, lerp, smoothstep } from '../core/math';
 import { Biome, TerrainData, WorldConfig } from './types';
+import { boundaryMotion, makeHotspots, makePlates, PlateMap, subducting } from './Plates';
 
 export const NO_WATER = -1e9;
 
@@ -30,11 +31,18 @@ export interface TerrainGenResult {
 
 export type ProgressFn = (stage: string, fraction: number) => void;
 
+/**
+ * Annual mean temperature at the cold edge of the map, and how much warmer it
+ * gets by the warm edge. The span is wide on purpose: a world that runs from
+ * ice to jungle has tundra, taiga, forest, steppe, desert and rainforest in it
+ * and looks like somewhere, and a world that runs from 4 to 24 degrees is
+ * green everywhere and looks like nowhere.
+ */
 const CLIMATE_TEMP: Record<WorldConfig['climate'], { base: number; span: number; moisture: number }> = {
-  temperate: { base: 4, span: 20, moisture: 1.0 },
-  cold: { base: -10, span: 17, moisture: 0.92 },
-  warm: { base: 13, span: 18, moisture: 1.05 },
-  arid: { base: 8, span: 22, moisture: 0.62 },
+  temperate: { base: -14, span: 46, moisture: 1.0 },
+  cold: { base: -26, span: 40, moisture: 0.92 },
+  warm: { base: -4, span: 44, moisture: 1.05 },
+  arid: { base: -10, span: 50, moisture: 0.62 },
 };
 
 export function generateTerrain(config: WorldConfig, progress: ProgressFn): TerrainGenResult {
@@ -44,6 +52,8 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
 
   const nContinent = new Noise2D(rng.int(0, 1e9));
   const nWarp = new Noise2D(rng.int(0, 1e9));
+  const nWarp2 = new Noise2D(rng.int(0, 1e9));
+  const nCoast = new Noise2D(rng.int(0, 1e9));
   const nMountain = new Noise2D(rng.int(0, 1e9));
   const nRidge = new Noise2D(rng.int(0, 1e9));
   const nHill = new Noise2D(rng.int(0, 1e9));
@@ -55,120 +65,242 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
 
   // ---------------------------------------------------------------- stage 1
   //
-  // Elevation is built directly in metres. The key move is `shapeElevation`,
-  // which compresses low ground and expands high ground: real valley floors are
-  // nearly flat and real mountains are steep, and a uniform noise-to-metres
-  // mapping gives you neither. Without this the whole map averages about 30
-  // degrees of slope and there is nowhere to put a building.
+  // Elevation is not noise with a hole cut in the middle of it. It is the top
+  // of a set of plates: continental crust floats high and dry, oceanic crust
+  // floats low and drowned, and everything dramatic -- cordilleras, trenches,
+  // island arcs, rift valleys, mid-ocean ridges -- happens along the lines
+  // where two of them meet. Building the map this way is what gives a world
+  // coastlines you could point at on an atlas rather than a blob.
   progress('Shaping the continent', 0);
+
   // Relief has to be proportional to the map. A 150 m peak is a mountain on a
   // 1.3 km continent and an unclimbable cone on a 400 m island, so every height
   // constant below is expressed relative to this one and scaled with the world.
   const worldMetres = N * config.tileSize;
-  const PEAK_HEIGHT = clamp(worldMetres * 0.085, 28, 210);
+  const PEAK_HEIGHT = clamp(worldMetres * 0.062, 34, 300);
   const hs = PEAK_HEIGHT / 145;
-  const SEABED_DEPTH = PEAK_HEIGHT * 0.8;
+  const SEABED_DEPTH = PEAK_HEIGHT * 1.15;
   /**
-   * Fraction of the map above sea level *before* erosion. Erosion and river
-   * carving then drown roughly a third of the coastal fringe, which is why
-   * this is set well above the land fraction we actually want.
+   * Roughly how much of the map we want standing above water. Plate layout
+   * gets us most of the way there on its own; this only nudges sea level so
+   * that no seed hands the player a drowned world or a pond.
    */
-  const TARGET_LAND_FRACTION = 0.5;
+  const TARGET_LAND_FRACTION = 0.36;
 
-  // Pass 1: the raw continent field, before it means anything in metres.
+  const plates = makePlates(config.seed, worldMetres);
+  const plateMap = new PlateMap(plates, config.seed, worldMetres);
+  const hotspots = makeHotspots(config.seed, worldMetres);
+
+  /** How hard the ground is being pushed up here, 0..1. Used by stage 2. */
+  const uplift = new Float32Array(total);
+
+  /** Width of the deformed belt either side of a boundary, in metres. */
+  const W = worldMetres * 0.05;
+
+  /**
+   * Surface detail is measured in metres, not in fractions of the map.
+   *
+   * A hill is about the same size whatever map it is on, and tying the noise
+   * frequency to the map instead meant a small world got the same number of
+   * ridges as a big one crammed into a quarter of the ground -- which is a
+   * world with nothing flat enough to stand a house on. One unit of this is
+   * one kilometre of world.
+   */
+  const KM = worldMetres / 1000;
+
   const raw = new Float32Array(total);
   let rawMin = Infinity;
   let rawMax = -Infinity;
   for (let z = 0; z < N; z++) {
     for (let x = 0; x < N; x++) {
+      const i = z * N + x;
       const u = x / N;
       const v = z / N;
+      const wx = x * config.tileSize;
+      const wz = z * config.tileSize;
 
-      // Warped coordinates keep coastlines from looking like plain noise.
-      const [wx, wz] = warp(nWarp, u, v, 0.09, 2.4);
+      const q = plateMap.at(wx, wz);
+      const motion = boundaryMotion(q.a, q.b);
+      const d = q.edge;
 
-      // Radial falloff guarantees ocean at the world edge: the world reads as
-      // a finite island slab, matching reference image 1.
-      const dx = Math.abs(u - 0.5) * 2;
-      const dz = Math.abs(v - 0.5) * 2;
-      const d = Math.sqrt(dx * dx * 0.82 + dz * dz * 0.82);
-      const coastNoise = nContinent.fbm(wx * 3.1, wz * 3.1, 4) * 0.11;
-      const mask = 1 - smoothstep(0.8, 1.16, d + coastNoise);
+      // Where the crust floats, before anything is done to it. The bias is
+      // blended across the boundary rather than switched at it: a plate is not
+      // a continent, and real coastlines wander over plate edges without
+      // noticing them -- half the Atlantic sits on the North American plate.
+      const baseA = q.a.oceanic ? -0.36 : 0.3;
+      const baseB = q.b.oceanic ? -0.36 : 0.3;
+      const inland = smoothstep(0, W * 4.2, d);
+      let h = lerp((baseA + baseB) * 0.5, baseA, inland);
 
-      // A broad dome under the noise. Without it the island interior is one
-      // uniform noise band, the sea-level cut lands inside the coastal ramp,
-      // and the result is a cliff-edged plateau instead of a landscape that
-      // rises from a coastal plain to an interior highland.
-      const dome = 1 - smoothstep(0.02, 1.05, d + coastNoise * 0.5);
-      const land = ((nContinent.fbm(wx * 1.15, wz * 1.15, 5) * 0.5 + 0.5) * 0.72 + dome * 0.28) * mask;
-      raw[z * N + x] = land;
-      if (land < rawMin) rawMin = land;
-      if (land > rawMax) rawMax = land;
+      // And then the shape of the land itself, which is what the coastline
+      // actually follows. Two rounds of domain warping -- one broad, one
+      // tight -- are what turn a field of noise into headlands, bays, straits
+      // and offshore islands, and what stop the outline of a continent
+      // betraying the straight-edged cell of the plate underneath it.
+      const [w1x, w1z] = warp(nWarp, u, v, 0.26, 1.4);
+      const [cx, cz] = warp(nWarp2, w1x, w1z, 0.085, 4.1);
+      h += nContinent.fbm(cx * 1.3, cz * 1.3, 6) * 0.72;
+      h += nCoast.fbm(cx * 6.4, cz * 6.4, 4) * 0.16;
+
+      // How fast this boundary is working. A boundary barely moving builds
+      // barely anything.
+      const drive = clamp01(motion.rate / 40);
+      let up = 0;
+
+      if (motion.kind === 'convergent') {
+        const under = subducting(q.a, q.b);
+        const riding = under === q.a ? q.b : q.a;
+        if (!q.a.oceanic && !q.b.oceanic) {
+          // Continent against continent. Neither will go down, so the crust
+          // between them thickens into one broad, very high range straddling
+          // the join -- no trench, no volcanoes, just the Himalaya.
+          up = Math.exp(-Math.pow(d / (W * 1.3), 1.5)) * 1.02;
+        } else if (q.a === riding) {
+          // Standing on the plate being ridden over. The range sits set back
+          // from the water, the way the Andes stand behind the Chilean coast.
+          const band = (d - W * 0.3) / (W * 0.6);
+          up = Math.exp(-band * band) * (q.a.oceanic ? 0.82 : 0.9);
+        } else {
+          // Standing on the slab going down. The sea floor bends sharply into
+          // a trench just before it disappears under the other plate.
+          up = -Math.exp(-Math.pow(d / (W * 0.24), 2)) * 0.45;
+        }
+      } else if (motion.kind === 'divergent') {
+        if (!q.a.oceanic) {
+          // A continent being pulled apart: a floor dropped between two
+          // raised shoulders, which is the East African Rift in cross-section.
+          const t = d / (W * 0.5);
+          const shoulder = (d - W * 0.8) / (W * 0.5);
+          up = Math.exp(-t * t) * -0.45 + Math.exp(-shoulder * shoulder) * 0.32;
+        } else {
+          // New sea floor comes up hot and stands proud, then sinks as it
+          // cools and spreads. That slow subsidence is the shape of every
+          // mid-ocean ridge there is.
+          up = Math.exp(-Math.pow(d / (W * 1.7), 1.2)) * 0.36;
+        }
+      } else {
+        // Grinding past each other lifts almost nothing, but it leaves the
+        // rock along the line broken and ridged.
+        const grain = nRidge.sample(cx * 9, cz * 9) * 0.5 + 0.5;
+        up = Math.exp(-Math.pow(d / (W * 0.5), 2)) * 0.12 * grain;
+      }
+
+      up *= 0.35 + drive * 0.65;
+      if (up > 0) uplift[i] = clamp01(up);
+      h += up;
+
+      // Volcanic chains, which pay no attention to the boundaries at all. The
+      // plate rides over a fixed plume and the plume punches a new island
+      // through it every so often, leaving the old ones behind to sink.
+      for (const hot of hotspots) {
+        const rx = wx - hot.x;
+        const rz = wz - hot.z;
+        const along = rx * hot.driftX + rz * hot.driftZ;
+        // A chain is short. The plume only reaches so far back before the old
+        // cones have sunk out of sight altogether.
+        if (along < -W * 0.4 || along > hot.length) continue;
+        const across = Math.abs(rx * -hot.driftZ + rz * hot.driftX);
+        if (across > W * 0.55) continue;
+        // Evenly spaced cones look stitched on. The plume does not punch on a
+        // metronome, so the spacing wanders.
+        const k = along / hot.spacing;
+        const nearest = Math.round(k);
+        const jitter = (Math.sin(nearest * 12.9898 + hot.x * 0.017) * 43758.5453) % 1;
+        const centre = (nearest + jitter * 0.34) * hot.spacing;
+        const r = Math.hypot(along - centre, across) / (W * 0.22);
+        if (r > 2.4) continue;
+        // The far end of the chain is the old end: worn down and sinking.
+        const age = clamp01(1 - along / hot.length);
+        const cone = Math.exp(-r * r) * 1.4 * hot.strength * (0.2 + age * age * 0.8);
+        h += cone;
+        if (cone > 0.3) uplift[i] = Math.max(uplift[i], clamp01(cone * 0.45));
+      }
+
+      // The world is finite, and it ends in open water rather than in a cliff
+      // at the edge of the map.
+      const fade = Math.min(
+        smoothstep(0, 0.085, u),
+        smoothstep(0, 0.085, 1 - u),
+        smoothstep(0, 0.085, v),
+        smoothstep(0, 0.085, 1 - v),
+      );
+      h = lerp(-0.9, h, fade);
+      uplift[i] *= fade;
+
+      raw[i] = h;
+      if (h < rawMin) rawMin = h;
+      if (h > rawMax) rawMax = h;
     }
-    if ((z & 31) === 0) progress('Shaping the continent', (z / N) * 0.5);
+    if ((z & 15) === 0) progress('Shaping the continent', (z / N) * 0.55);
   }
 
-  // Normalise the field by its own distribution. Raw noise output varies a lot
-  // between seeds, and without this one seed gives a gentle archipelago and the
-  // next gives an unplayable wall of mountains. Percentile-based remapping means
-  // every world has roughly the same land area and the same spread of heights,
-  // while still looking completely different.
-  const sea = percentileOf(raw, rawMin, rawMax, 1 - TARGET_LAND_FRACTION);
-  const peak = percentileOf(raw, rawMin, rawMax, 0.997);
-  const landSpan = Math.max(1e-4, peak - sea);
-  const seaSpan = Math.max(1e-4, sea - rawMin);
+  // Sea level. The plates decide most of this; all we do is make sure a seed
+  // that happened to come up nearly all ocean, or nearly all land, is pulled
+  // back far enough to be worth playing. The clamp is what keeps it a nudge.
+  const cut = percentileOf(raw, rawMin, rawMax, 1 - TARGET_LAND_FRACTION);
+  const shift = clamp(-cut, -0.16, 0.16);
+  rawMin += shift;
+  rawMax += shift;
+  const landTop = Math.max(0.05, percentileOf(raw, rawMin - shift, rawMax - shift, 0.9975) + shift);
+  const seaFloor = Math.max(0.05, -(rawMin - 1e-6));
 
   for (let z = 0; z < N; z++) {
     for (let x = 0; x < N; x++) {
       const i = z * N + x;
       const u = x / N;
       const v = z / N;
-      const r = raw[i];
+      const r = raw[i] + shift;
 
       let h: number;
-      if (r <= sea) {
-        h = ((r - sea) / seaSpan) * SEABED_DEPTH;
-      } else {
+      if (r >= 0) {
         // The exponent compresses low ground and expands high ground: real
         // valley floors are nearly flat and real mountains are steep, and a
         // linear mapping gives you neither.
-        const t = clamp01((r - sea) / landSpan);
-        h = Math.pow(t, 1.9) * PEAK_HEIGHT;
+        h = Math.pow(clamp01(r / landTop), 1.8) * PEAK_HEIGHT;
+      } else {
+        // Under water the world has three floors, not one: a shallow shelf
+        // running out from the beach, a short steep drop off the end of it,
+        // and then the abyssal plain. Getting this shape right is most of why
+        // a coast reads as a coast -- you can wade out, and then you cannot.
+        const s = clamp01(-r / seaFloor);
+        const shelf = smoothstep(0, 0.1, s) * 0.05;
+        const slopeDrop = smoothstep(0.1, 0.3, s) * 0.55;
+        const abyss = smoothstep(0.3, 1, s) * 0.4;
+        h = -(shelf + slopeDrop + abyss) * SEABED_DEPTH;
       }
 
       // Hills and surface detail scale with altitude, so lowlands stay walkable
       // and buildable while uplands get genuinely broken ground.
       const hillAmp = (0.9 + smoothstep(8 * hs, 60 * hs, h) * 11) * hs;
-      h += nHill.fbm(u * 6.5, v * 6.5, 4) * hillAmp;
+      h += nHill.fbm(u * 7 * KM, v * 7 * KM, 4) * hillAmp * (h > -4 ? 1 : 0.35);
       const detailAmp = (0.18 + smoothstep(18 * hs, 80 * hs, h) * 1.9) * hs;
-      h += nDetail.fbm(u * 17, v * 17, 3) * detailAmp;
+      h += nDetail.fbm(u * 22 * KM, v * 22 * KM, 3) * detailAmp;
 
       height[i] = h;
     }
-    if ((z & 31) === 0) progress('Shaping the continent', 0.5 + (z / N) * 0.5);
+    if ((z & 15) === 0) progress('Shaping the continent', 0.55 + (z / N) * 0.45);
   }
 
   // ---------------------------------------------------------------- stage 2
+  //
+  // A range built from a smooth bulge is a smooth bulge. Ridged noise laid on
+  // in proportion to how hard the ground is being pushed up turns it into a
+  // line of peaks with passes between them, and leaves the plate interiors
+  // alone.
   progress('Raising mountains', 0);
   for (let z = 0; z < N; z++) {
     for (let x = 0; x < N; x++) {
       const i = z * N + x;
+      const mask = uplift[i];
+      if (mask <= 0.02) continue;
       const u = x / N;
       const v = z / N;
-      const h = height[i];
-      if (h < 2) continue;
-
       const [mx, mz] = warp(nWarp, u, v, 0.05, 3.1);
-      const range = nMountain.fbm(mx * 1.7, mz * 1.7, 3) * 0.5 + 0.5;
-      // Mountains only where the land is already high, and only in distinct
-      // ranges rather than everywhere — the reference imagery is flat valley
-      // floors *against* steep rock, not uniformly rugged ground.
-      const inland = smoothstep(14 * hs, 58 * hs, h);
-      const mMask = smoothstep(0.6, 0.88, range) * inland;
-      if (mMask <= 0.001) continue;
-
-      const ridge = nRidge.ridged(mx * 3.4, mz * 3.4, 6);
-      height[i] = h + mMask * ridge * 155 * hs;
+      // Four octaves, not six: the finest one has to stay coarser than the
+      // ground a person could stand on, or a range is a field of spikes.
+      const ridge = nRidge.ridged(mx * 2.6 * KM, mz * 2.6 * KM, 4);
+      const peaks = nMountain.fbm(mx * 6 * KM, mz * 6 * KM, 3) * 0.5 + 0.5;
+      height[i] += mask * (ridge * 0.8 + peaks * 0.2) * PEAK_HEIGHT * 0.58;
     }
     if ((z & 31) === 0) progress('Raising mountains', z / N);
   }
@@ -188,7 +320,7 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
   hydraulicErode(height, N, config.seed ^ 0x51ab, Math.floor(total * 0.35), progress);
   // Droplet erosion leaves high-frequency speckle behind. Smoothing it out of
   // the flats (and only the flats) is what finally makes level ground level.
-  smoothLowlands(height, N, config.tileSize, 3);
+  smoothLowlands(height, N, config.tileSize, 5);
 
   // ---------------------------------------------------------------- stage 4
   progress('Carving rivers', 0);
@@ -217,8 +349,13 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
   const clim = CLIMATE_TEMP[config.climate];
   const lapse = 9 / Math.max(10, PEAK_HEIGHT);
   for (let z = 0; z < N; z++) {
-    const lat = z / N; // north (0) is cold, south (1) is warm
-    const latTemp = clim.base + clim.span * lat;
+    // One hemisphere, pole at the top edge and equator at the bottom. The
+    // curve is not a straight line: real temperature falls away slowly
+    // through the tropics and then drops hard past the mid-latitudes, which
+    // is what puts the ice caps where they are instead of smearing tundra
+    // over a third of the map.
+    const lat = z / N;
+    const latTemp = clim.base + clim.span * Math.pow(lat, 0.72);
     for (let x = 0; x < N; x++) {
       const i = z * N + x;
       const alt = Math.max(0, height[i]);
@@ -251,7 +388,23 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
       continue;
     }
 
-    biome[i] = classify(h, t, m, s, maxH, hs);
+    const x = i % N;
+    const z = (i / N) | 0;
+    let coastal = false;
+    for (let dz = -2; dz <= 2 && !coastal; dz++) {
+      const zz = z + dz;
+      if (zz < 0 || zz >= N) continue;
+      for (let dx = -2; dx <= 2; dx++) {
+        const xx = x + dx;
+        if (xx < 0 || xx >= N) continue;
+        const j = zz * N + xx;
+        if (waterHeight[j] > height[j] && height[j] <= 0.5) {
+          coastal = true;
+          break;
+        }
+      }
+    }
+    biome[i] = classify(h, t, m, s, maxH, hs, coastal);
     fertility[i] = computeFertility(biome[i] as Biome, h, t, m, s, hs);
   }
 
@@ -300,10 +453,21 @@ export function generateTerrain(config: WorldConfig, progress: ProgressFn): Terr
 // Biome classification
 // -------------------------------------------------------------------------
 
-function classify(h: number, t: number, m: number, s: number, maxH: number, hs: number): Biome {
+function classify(
+  h: number,
+  t: number,
+  m: number,
+  s: number,
+  maxH: number,
+  hs: number,
+  coastal: boolean,
+): Biome {
   const highBand = Math.max(95 * hs, maxH * 0.62);
 
-  if (h < 1.6 && s < 0.12) return Biome.Beach;
+  // A beach is a strip you could throw a stone into the sea from. Low flat
+  // ground inland is a plain, and calling it sand was what turned whole river
+  // basins the colour of the Sahara.
+  if (coastal && h < 2.2 && s < 0.14) return Biome.Beach;
 
   // Bare rock on anything genuinely steep, regardless of climate.
   if (s > 0.62) return h > highBand * 1.05 || t < -4 ? Biome.Alpine : Biome.Mountain;
@@ -313,15 +477,19 @@ function classify(h: number, t: number, m: number, s: number, maxH: number, hs: 
   if (t < 0) return Biome.Tundra;
   if (t < 7) return m > 0.34 ? Biome.Taiga : Biome.Tundra;
 
+  // Whittaker's two axes, near enough: how warm it is and how wet. A desert
+  // is not a hot place, it is a dry one -- the Gobi freezes every winter --
+  // so dryness gets to make deserts at any temperature above freezing.
   if (t < 21) {
-    if (m > 0.64) return Biome.DenseForest;
-    if (m > 0.41) return Biome.TemperateForest;
-    return Biome.Grassland;
+    if (m < 0.2) return Biome.Desert;
+    if (m < 0.42) return Biome.Grassland;
+    if (m < 0.64) return Biome.TemperateForest;
+    return Biome.DenseForest;
   }
 
-  if (m > 0.6) return Biome.DenseForest;
-  if (m > 0.3) return Biome.Savanna;
-  return Biome.Desert;
+  if (m < 0.27) return Biome.Desert;
+  if (m < 0.52) return Biome.Savanna;
+  return Biome.DenseForest;
 }
 
 function computeFertility(b: Biome, h: number, t: number, m: number, s: number, hs: number): number {
@@ -951,6 +1119,7 @@ function computeMoisture(
   for (let z = 0; z < N; z++) {
     let budget = 1;
     let lastH = 0;
+    const lat = z / N;
     for (let x = 0; x < N; x++) {
       const i = z * N + x;
       const hh = Math.max(0, h[i]);
@@ -962,6 +1131,15 @@ function computeMoisture(
       const base = noise.fbm(x / N * 4.2, z / N * 4.2, 4) * 0.5 + 0.5;
       const near = Math.exp(-distToWater[i] / 26);
       let m = base * 0.46 + near * 0.34 + budget * 0.3;
+
+      // Latitude decides more about rainfall than anything local does. Air
+      // rising over the equator dumps everything it has and comes back down
+      // dry over the subtropics: that one circulation is why the tropics are
+      // forest and why every great desert on Earth sits at the same latitude.
+      const dry = Math.exp(-Math.pow((lat - 0.7) / 0.13, 2));
+      const wet = smoothstep(0.84, 1, lat);
+      m += wet * 0.3 - dry * 0.42;
+
       m *= clim.moisture;
       m -= smoothstep(70 * hs, 170 * hs, hh) * 0.16;
       moisture[i] = clamp01(m);

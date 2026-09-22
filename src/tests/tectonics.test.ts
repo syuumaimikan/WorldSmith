@@ -22,22 +22,35 @@ describe('plates', () => {
     for (const id of seen) expect(tec.plates[id]).toBeDefined();
   });
 
-  it('knows which of them are ocean floor', () => {
+  it('puts the water where the ocean floor is', () => {
+    // Which plates are oceanic is decided before the land is raised, and the
+    // land is raised from it -- so this is not a definition being restated,
+    // it is the generator having honoured it. Individual plates can still go
+    // against the grain, because a continent is not the same thing as a plate
+    // and real ones carry islands and drowned shelves; what cannot happen is
+    // the ocean floor coming out drier than the continents.
     const world = buildTestWorld();
-    // Oceanic is read off how much water sits on the plate, not rolled.
-    for (const p of world.tectonics.plates) {
-      const t = world.terrain;
-      let submerged = 0;
-      let total = 0;
-      for (let i = 0; i < world.tectonics.plateOf.length; i += 3) {
-        if (world.tectonics.plateOf[i] !== p.id) continue;
-        total++;
-        if (t.waterHeight[i] > t.data.height[i]) submerged++;
-      }
-      if (total < 20) continue;
-      const wet = submerged / total;
-      expect(p.oceanic).toBe(wet > 0.6);
+    const t = world.terrain;
+    const wetness = new Map<number, { sub: number; total: number }>();
+    for (let i = 0; i < world.tectonics.plateOf.length; i++) {
+      const id = world.tectonics.plateOf[i];
+      let e = wetness.get(id);
+      if (!e) wetness.set(id, (e = { sub: 0, total: 0 }));
+      e.total++;
+      if (t.waterHeight[i] > t.data.height[i]) e.sub++;
     }
+
+    const wet: number[] = [];
+    const dry: number[] = [];
+    for (const p of world.tectonics.plates) {
+      const e = wetness.get(p.id);
+      if (!e || e.total < 200) continue;
+      (p.oceanic ? wet : dry).push(e.sub / e.total);
+    }
+    expect(wet.length).toBeGreaterThan(0);
+    expect(dry.length).toBeGreaterThan(0);
+    const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+    expect(mean(wet)).toBeGreaterThan(mean(dry) + 0.12);
   });
 
   it('meet along faults classified by how they are moving', () => {
@@ -132,18 +145,31 @@ describe('mountain building', () => {
   it('lifts colliding ground and drops rifting ground over an age', () => {
     const world = buildTestWorld();
     const tec = world.tectonics;
-    const conv = tec.faults.find((f) => f.kind === 'convergent' && f.closingRate > 10);
-    const div = tec.faults.find((f) => f.kind === 'divergent' && f.closingRate > 10);
     const t = world.terrain;
     const at = (f: { x: number; z: number }): number =>
       t.data.height[t.index(t.tileX(f.x), t.tileZ(f.z))];
 
-    const before = { conv: conv ? at(conv) : 0, div: div ? at(div) : 0 };
+    // Measured over every fault of each kind rather than over one of them.
+    // A single segment near a triple junction is pulled both ways at once and
+    // can legitimately go either way; what the rock is doing as a whole
+    // cannot.
+    const conv = tec.faults.filter((f) => f.kind === 'convergent' && f.closingRate > 10);
+    const div = tec.faults.filter((f) => f.kind === 'divergent' && f.closingRate > 10);
+    expect(conv.length + div.length).toBeGreaterThan(0);
+    const before = [...conv, ...div].map(at);
+
     // An age, not a lifetime: four centuries of drift is unmistakable.
     runRock(world, 60 * 400);
 
-    if (conv) expect(at(conv)).toBeGreaterThan(before.conv);
-    if (div) expect(at(div)).toBeLessThan(before.div);
+    const after = [...conv, ...div].map(at);
+    const mean = (xs: number[]): number =>
+      xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+    if (conv.length) {
+      expect(mean(after.slice(0, conv.length))).toBeGreaterThan(mean(before.slice(0, conv.length)));
+    }
+    if (div.length) {
+      expect(mean(after.slice(conv.length))).toBeLessThan(mean(before.slice(conv.length)));
+    }
   });
 });
 

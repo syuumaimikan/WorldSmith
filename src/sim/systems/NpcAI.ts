@@ -13,7 +13,7 @@ import { isChild } from '../Generations';
 import { Npc, NPC_WALK_SPEED, NpcActivity } from '../Npc';
 import { Building } from '../Building';
 import { HaulJob, Job } from '../Jobs';
-import { ItemId, ITEMS, FOOD_PRIORITY, nutritionOf } from '../../data/items';
+import { ItemId, ITEMS, FOOD_PRIORITY, isFood, nutritionOf } from '../../data/items';
 import { RESOURCES } from '../../world/resources';
 import { RECIPES, Recipe } from '../../data/recipes';
 import { PROFESSIONS, SkillId } from '../../data/professions';
@@ -200,6 +200,20 @@ function maybeReconsider(world: World, npc: Npc): void {
   abandonTask(world, npc);
 }
 
+/**
+ * Whether they are holding settlement goods, as opposed to their own lunch
+ * and the tool they work with.
+ */
+function carriesGoods(npc: Npc): boolean {
+  for (const slot of npc.inventory.slots) {
+    if (!slot) continue;
+    if (isFood(slot.item)) continue;
+    if (ITEMS[slot.item].category === 'tool') continue;
+    return true;
+  }
+  return false;
+}
+
 function findCarriedFood(npc: Npc): ItemId | null {
   for (const f of FOOD_PRIORITY) if (npc.inventory.has(f)) return f;
   return null;
@@ -220,6 +234,18 @@ function assignWork(world: World, npc: Npc): void {
       z: c.z + npc.rng.range(-16, 16),
       interruptible: true,
     });
+    return;
+  }
+
+  // Anything still in their arms goes down first.
+  //
+  // Somebody who broke off a delivery for supper, or because night fell, is
+  // standing there holding three logs. If they simply start something else
+  // those logs are out of the world: the site that needed them waits for
+  // ever, the job is reissued, and the next carrier does the same thing. A
+  // person puts down what they are carrying before they pick up new work.
+  if (carriesGoods(npc)) {
+    npc.setTask('deliver_carried');
     return;
   }
 
