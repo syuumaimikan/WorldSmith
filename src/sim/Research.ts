@@ -6,7 +6,15 @@
  * not advance, which is the intended trade-off.
  */
 
-import { ALL_RESEARCH_IDS, availableResearch, RESEARCH, ResearchId, ResearchNode } from '../data/research';
+import {
+  ALL_RESEARCH_IDS,
+  availableResearch,
+  RESEARCH,
+  ResearchEffects,
+  researchEffects,
+  ResearchId,
+  ResearchNode,
+} from '../data/research';
 import { BUILDINGS, BuildingId } from '../data/buildings';
 import { RECIPES, RecipeId } from '../data/recipes';
 
@@ -19,6 +27,25 @@ export class ResearchSystem {
 
   /** Set for one tick when a project completes. */
   justCompleted: ResearchId | null = null;
+
+  /**
+   * What everything known adds up to, recomputed only when the set changes.
+   *
+   * Read on hot paths -- every worker's work rate, every day's harvest --
+   * so it is not worth summing fifty entries each time somebody swings an
+   * axe.
+   */
+  private cached: ResearchEffects | null = null;
+
+  get effects(): ResearchEffects {
+    if (!this.cached) this.cached = researchEffects(this.unlocked);
+    return this.cached;
+  }
+
+  /** Called whenever the unlocked set changes. */
+  private invalidate(): void {
+    this.cached = null;
+  }
 
   constructor() {
     // Everyone starts knowing how to make a tool out of a rock and a stick.
@@ -54,6 +81,7 @@ export class ResearchSystem {
     const node = RESEARCH[this.active];
     if (this.progress >= node.cost) {
       this.unlocked.add(this.active);
+      this.invalidate();
       this.justCompleted = this.active;
       this.active = null;
       this.progress = 0;
@@ -104,6 +132,7 @@ export class ResearchSystem {
       if (ALL_RESEARCH_IDS.includes(id as ResearchId)) this.unlocked.add(id as ResearchId);
     }
     if (this.unlocked.size === 0) this.unlocked.add('basic_tools');
+    this.invalidate();
     this.active = (data.active as ResearchId) ?? null;
     if (this.active && !RESEARCH[this.active]) this.active = null;
     this.progress = data.progress ?? 0;

@@ -229,8 +229,14 @@ export class Npc {
     return levelFromXp(this.skillXp[id] ?? 0);
   }
 
-  /** Work-rate multiplier for a skill, including tool and condition effects. */
-  workRate(id: SkillId, toolBonus = 1): number {
+  /**
+   * Work-rate multiplier for a skill, including tool and condition effects.
+   *
+   * @param known what the settlement has worked out, which is a multiplier on
+   *   everything anybody does with their hands. Left out where the caller has
+   *   no settlement to hand.
+   */
+  workRate(id: SkillId, toolBonus = 1, known = 1): number {
     const base = skillMultiplier(this.skill(id));
     const fatigue = 0.62 + clamp01(this.needs.rest / 100) * 0.38;
     const health = 0.55 + clamp01(this.condition / 100) * 0.45;
@@ -239,7 +245,7 @@ export class Npc {
     // slower, and it is their own years that decide it rather than a number
     // that applies to everyone at sixty.
     const years = 1 - this.frailty * 0.45;
-    return base * toolBonus * fatigue * health * hands * years;
+    return base * toolBonus * fatigue * health * hands * years * known;
   }
 
   addXp(id: SkillId, amount: number): void {

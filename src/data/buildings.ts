@@ -413,6 +413,7 @@ const RAW: RawDef[] = [
   {
     id: 'quarry',
     name: 'Stone Quarry',
+    requiresResearch: 'masonry',
     category: 'gathering',
     style: 'quarry',
     description:
@@ -485,6 +486,7 @@ const RAW: RawDef[] = [
   {
     id: 'fishing_hut',
     name: 'Fishing Hut',
+    requiresResearch: 'boatbuilding',
     category: 'gathering',
     style: 'shed',
     description: 'A jetty and a drying rack. Reliable food wherever there is water.',
@@ -509,6 +511,7 @@ const RAW: RawDef[] = [
   {
     id: 'hunter_lodge',
     name: "Hunter's Lodge",
+    requiresResearch: 'hunting',
     category: 'gathering',
     style: 'shed',
     description:
@@ -623,7 +626,7 @@ const RAW: RawDef[] = [
     profession: 'smith',
     storageSlots: 28,
     recipes: ['iron_smelt', 'copper_smelt'],
-    requiresResearch: 'metalworking',
+    requiresResearch: 'smelting',
     stages: [
       stage('planning', 'Staking out', 40),
       stage('foundation', 'Laying the hearth', 190, { stone: 16 }),
@@ -724,7 +727,7 @@ const RAW: RawDef[] = [
     profession: 'cook',
     storageSlots: 24,
     recipes: ['bread_bake', 'preserves_make'],
-    requiresResearch: 'agriculture',
+    requiresResearch: 'baking',
     stages: [
       stage('planning', 'Staking out', 30),
       stage('foundation', 'Laying footings', 140, { stone: 9 }),
@@ -739,6 +742,7 @@ const RAW: RawDef[] = [
   {
     id: 'weaver',
     name: "Weaver's Shop",
+    requiresResearch: 'weaving',
     category: 'production',
     style: 'workshop',
     description: 'Spins fiber into cloth and rope. Cloth is wanted by every household.',
@@ -800,7 +804,7 @@ const RAW: RawDef[] = [
     workSlots: 1,
     profession: 'farmer',
     storageSlots: 48,
-    requiresResearch: 'agriculture',
+    requiresResearch: 'animal_husbandry',
     stages: [
       stage('planning', 'Staking out', 30),
       stage('foundation', 'Laying footings', 140, { stone: 8 }),
@@ -904,7 +908,7 @@ const RAW: RawDef[] = [
     workSlots: 2,
     profession: 'cook',
     storageSlots: 24,
-    requiresResearch: 'organisation',
+    requiresResearch: 'brewing',
     stages: [
       stage('planning', 'Staking out', 35),
       stage('foundation', 'Laying footings', 160, { stone: 10 }),
@@ -976,7 +980,7 @@ const RAW: RawDef[] = [
     buildCrew: 3,
     workSlots: 0,
     linear: true,
-    requiresResearch: 'timber_framing',
+    requiresResearch: 'bridges',
     stages: [
       stage('planning', 'Setting the piles', 20, { log: 1 }),
       stage('fitout', 'Decking', 34, { plank: 2 }),
@@ -1029,7 +1033,7 @@ const RAW: RawDef[] = [
     workSlots: 2,
     profession: 'hauler',
     storageSlots: 16,
-    requiresResearch: 'haulage',
+    requiresResearch: 'the_wheel',
     stages: [
       stage('planning', 'Staking out', 25),
       stage('foundation', 'Laying footings', 110, { stone: 6 }),

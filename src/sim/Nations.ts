@@ -823,7 +823,7 @@ export class NationSystem {
   private productionOf(world: World, nation: Nation): number {
     if (nation.isPlayer) {
       // Real goods, really made: whatever the workshops turned out.
-      return world.economy.dailyOutput();
+      return world.economy.dailyOutput(world.research.effects.trade);
     }
     // Elsewhere, what the land and the people it supports would yield, for
     // whatever they presently know how to do with either.

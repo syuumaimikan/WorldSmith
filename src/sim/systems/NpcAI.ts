@@ -641,7 +641,8 @@ function executeBuild(world: World, npc: Npc, dt: number): void {
 
   const tool = npc.tool === 'hammer' ? 1.35 : 1;
   const weather = world.weather.workPenalty;
-  const amount = BUILD_RATE * npc.workRate('construction', tool) * weather * dt;
+  const amount =
+    BUILD_RATE * npc.workRate('construction', tool, world.research.effects.build) * weather * dt;
   const result = b.applyWork(amount, npc.name);
   npc.addXp('construction', amount * 0.5);
 
@@ -688,7 +689,11 @@ function executeRepair(world: World, npc: Npc, dt: number): void {
   faceToward(npc, b.worldX, b.worldZ);
 
   const tool = npc.tool === 'hammer' ? 1.35 : 1;
-  const amount = BUILD_RATE * npc.workRate('construction', tool) * world.weather.workPenalty * dt;
+  const amount =
+    BUILD_RATE *
+    npc.workRate('construction', tool, world.research.effects.build) *
+    world.weather.workPenalty *
+    dt;
   npc.addXp('construction', amount * 0.5);
 
   if (world.applyRepair(b, amount)) {
@@ -712,7 +717,7 @@ function executeDemolish(world: World, npc: Npc, dt: number): void {
 
   npc.activity = 'demolishing';
   npc.workAnim = true;
-  b.demolishWork += BUILD_RATE * npc.workRate('construction') * dt;
+  b.demolishWork += BUILD_RATE * npc.workRate('construction', 1, world.research.effects.build) * dt;
   if (b.demolishWork >= b.def.totalWork * 0.35) {
     world.completeDemolition(b);
     if (npc.task.jobId) world.jobs.remove(npc.task.jobId);
@@ -750,7 +755,11 @@ function executeGather(world: World, npc: Npc, dt: number): void {
     (def.skill === 'chop' && npc.tool === 'axe') || (def.skill === 'mine' && npc.tool === 'pickaxe')
       ? 1.45
       : 1;
-  const amount = GATHER_RATE * npc.workRate(skill, toolBonus) * world.weather.workPenalty * dt;
+  const amount =
+    GATHER_RATE *
+    npc.workRate(skill, toolBonus, world.research.effects.work) *
+    world.weather.workPenalty *
+    dt;
   const result = world.harvestNode(node, amount);
   npc.addXp(skill, amount * 0.45);
 
@@ -780,7 +789,7 @@ function executeHunt(world: World, npc: Npc, dt: number): void {
   if (!arriveAt(world, npc, animal.x, animal.z, 2.2)) return;
 
   npc.workAnim = true;
-  npc.task.work += GATHER_RATE * npc.workRate('hunting') * dt;
+  npc.task.work += GATHER_RATE * npc.workRate('hunting', 1, world.research.effects.work) * dt;
   if (npc.task.work > 22) {
     world.killAnimal(animal, npc);
     npc.addXp('hunting', 14);
@@ -810,7 +819,11 @@ function executeProduce(world: World, npc: Npc, dt: number): void {
     npc.workAnim = true;
     const skill: SkillId = b.def.gathers === 'fish' ? 'hunting' : 'mining';
     const toolBonus = npc.tool === 'pickaxe' && b.def.gathers !== 'fish' ? 1.4 : 1;
-    const amount = GATHER_RATE * npc.workRate(skill, toolBonus) * world.weather.workPenalty * dt;
+    const amount =
+    GATHER_RATE *
+    npc.workRate(skill, toolBonus, world.research.effects.work) *
+    world.weather.workPenalty *
+    dt;
     npc.task.work += amount;
     npc.addXp(skill, amount * 0.4);
     const needed = world.extractionCost(b);
@@ -838,7 +851,7 @@ function executeProduce(world: World, npc: Npc, dt: number): void {
   npc.workAnim = true;
   const skill = craftSkillFor(recipe);
   const toolBonus = recipe.skill === 'woodworking' && npc.tool === 'saw' ? 1.4 : 1;
-  const amount = CRAFT_RATE * npc.workRate(skill, toolBonus) * dt;
+  const amount = CRAFT_RATE * npc.workRate(skill, toolBonus, world.research.effects.work) * dt;
   b.productionProgress += amount;
   npc.addXp(skill, amount * 0.4);
 
@@ -878,7 +891,11 @@ function executeFarm(world: World, npc: Npc, dt: number): void {
   npc.workAnim = true;
   npc.activity = plot.planted && plot.growth >= 1 ? 'farming' : 'planting';
   const toolBonus = npc.tool === 'hoe' ? 1.4 : 1;
-  const amount = FARM_RATE * npc.workRate('farming', toolBonus) * world.weather.workPenalty * dt;
+  const amount =
+    FARM_RATE *
+    npc.workRate('farming', toolBonus, world.research.effects.farm) *
+    world.weather.workPenalty *
+    dt;
   npc.task.work += amount;
   npc.addXp('farming', amount * 0.4);
 

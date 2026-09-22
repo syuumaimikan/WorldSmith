@@ -108,17 +108,25 @@ export class Economy {
    * is what a tax is taken out of: a share of real goods, not of a number that
    * was invented to be taxed.
    */
-  dailyOutput(): number {
+  dailyOutput(known = 1): number {
     let total = 0;
     for (const [id, stat] of this.stats) {
       if (stat.produced <= 0) continue;
-      total += stat.produced * ITEMS[id].value;
+      // Dyed cloth, minted coin and a ship that can cross open water all mean
+      // the same basket of goods is worth more than it was.
+      total += stat.produced * ITEMS[id].value * known;
     }
     return total;
   }
 
-  priceOf(id: ItemId): number {
-    return Math.max(1, Math.round(this.statOf(id).price));
+  /**
+   * What one of a thing fetches.
+   *
+   * @param known the settlement's trade multiplier -- dyes, coin and open
+   *   water are each worth something on top of whatever the goods are.
+   */
+  priceOf(id: ItemId, known = 1): number {
+    return Math.max(1, Math.round(this.statOf(id).price * known));
   }
 
   /**

@@ -442,7 +442,10 @@ export class World {
     }
     const farmers =
       adults.filter((n) => n.profession === 'farmer').length + adults.length * 0.25;
-    const farmed = Math.min(fields * 0.03, farmers * 1.8) * growing;
+    // Irrigation, rotation and a calendar are the difference between a field
+    // and a farm, and this is where that difference lands.
+    const farmed =
+      Math.min(fields * 0.03, farmers * 1.8) * growing * this.research.effects.farm;
 
     // Foraged food is not counted here. It is fetched in bushel by bushel by
     // the same pass that fetches timber, out of the same bushes, and eaten
@@ -1945,6 +1948,12 @@ export class World {
   }
 
   private recomputeSettlement(): void {
+    // What everyone can shoulder. Rope, a tanned strap, a pot and a cart are
+    // each worth real weight, and this is where knowing about them lands.
+    const carry = this.research.effects.carry;
+    this.player.inventory.weightLimit = 90 + carry;
+    for (const npc of this.npcs) npc.inventory.weightLimit = 70 + carry;
+
     let roadTiles = 0;
     for (let i = 0; i < this.terrain.overlay.length; i += 7) {
       if (this.terrain.overlay[i] & OVERLAY.Road) roadTiles += 7;
@@ -2380,7 +2389,10 @@ export class World {
     const water = clamp01(infra.food / 8) * 0.3;
     const fed = clamp01(npc.needs.hunger / 100) * 0.35;
     const rested = clamp01(npc.needs.rest / 100) * 0.15;
-    return clamp01(clinic * 0.55 + water + fed * 0.5 + rested);
+    // Knowing to wash your hands, boil the water and set the bone is worth
+    // more than the building it is done in.
+    const known = this.research.effects.care;
+    return clamp01(clinic * 0.55 + water + fed * 0.5 + rested + known);
   }
 
   /** Clean water and somewhere to put waste, which is what slows a plague. */

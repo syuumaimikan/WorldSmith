@@ -222,7 +222,7 @@ export class Development {
       const next = open.reduce((a, b) => (b.cost < a.cost ? b : a));
       world.research.start(next.id);
     }
-    world.research.contribute(scholars * 2.2 * days);
+    world.research.contribute(scholars * 2.2 * days * world.research.effects.study);
   }
 
   /**

@@ -102,6 +102,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 24,
     skill: 'crafting',
     defaultPriority: 7,
+    requiresResearch: 'cordage',
   }),
   cloth_weave: r({
     id: 'cloth_weave',
@@ -111,6 +112,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 32,
     skill: 'crafting',
     defaultPriority: 7,
+    requiresResearch: 'weaving',
   }),
   thatch_bundle: r({
     id: 'thatch_bundle',
@@ -129,6 +131,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 40,
     skill: 'crafting',
     defaultPriority: 9,
+    requiresResearch: 'charcoal_burning',
   }),
   brick_fire: r({
     id: 'brick_fire',
@@ -153,6 +156,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 38,
     skill: 'crafting',
     defaultPriority: 4,
+    requiresResearch: 'pottery_craft',
   }),
   glass_melt: r({
     id: 'glass_melt',
@@ -178,6 +182,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 52,
     skill: 'smithing',
     defaultPriority: 9,
+    requiresResearch: 'iron_working',
   }),
   copper_smelt: r({
     id: 'copper_smelt',
@@ -190,6 +195,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 44,
     skill: 'smithing',
     defaultPriority: 6,
+    requiresResearch: 'smelting',
   }),
   nails_craft: r({
     id: 'nails_craft',
@@ -268,6 +274,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 24,
     skill: 'crafting',
     defaultPriority: 10,
+    requiresResearch: 'milling',
   }),
   bread_bake: r({
     id: 'bread_bake',
@@ -277,6 +284,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 30,
     skill: 'cooking',
     defaultPriority: 10,
+    requiresResearch: 'baking',
   }),
   preserves_make: r({
     id: 'preserves_make',
@@ -299,6 +307,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
     work: 36,
     skill: 'crafting',
     defaultPriority: 5,
+    requiresResearch: 'tanning',
   }),
 };
 
