@@ -16,7 +16,7 @@ import { Biome, OreVein, PointOfInterest, WorldConfig } from '../world/types';
 import { SpatialGrid } from '../core/SpatialGrid';
 import { Rng } from '../core/rng';
 import { clamp, clamp01 } from '../core/math';
-import { GameTime, SeasonName } from './Time';
+import { GameTime, SeasonName, SECONDS_PER_GAME_HOUR } from './Time';
 import { Player, Obstacle } from './Player';
 import { ItemId, ITEMS, FOOD_PRIORITY, isFood } from '../data/items';
 import { EventLog } from './EventLog';
@@ -48,6 +48,7 @@ import { NationSystem } from './Nations';
 import { DiplomacySystem } from './Diplomacy';
 import { CultureSystem } from './Culture';
 import { Chronicle } from './History';
+import { Generations, WORKING_AGE } from './Generations';
 import { TechnologySystem } from './Technology';
 import type { Volcano, VolcanoState } from './Volcano';
 import { updateVolcanoes } from './Volcano';
@@ -127,6 +128,7 @@ export class World {
   readonly culture: CultureSystem;
   readonly history = new Chronicle();
   readonly technology = new TechnologySystem();
+  readonly generations: Generations;
   readonly disease: DiseaseSystem;
   /**
    * How hard the settlement is rationing, 0 when there is plenty. A famine is
@@ -199,6 +201,7 @@ export class World {
     this.nations = new NationSystem(terrain, config.seed, this.namer);
     this.diplomacy = new DiplomacySystem(config.seed);
     this.culture = new CultureSystem(config.seed, this.namer);
+    this.generations = new Generations(config.seed);
     this.disease = new DiseaseSystem(config.seed);
 
     for (const n of nodes) this.addNode(n);
@@ -209,6 +212,147 @@ export class World {
 
     this.time.onNewDay.push((day) => this.onNewDay(day));
     this.watchLog();
+  }
+
+  /**
+   * One day of a world running without anybody watching it closely.
+   *
+   * This is the settlement at day scale rather than at second scale. Nobody
+   * walks anywhere and no plank is carried, but the same rules that govern a
+   * played day govern this one: the ground regrows, the buildings weather,
+   * food spoils, the workshops turn out what their workers can turn out,
+   * people eat what there is and go hungry when there is not, they grow old,
+   * and children are born into whatever the settlement has become. A skipped
+   * century is a century that happened.
+   */
+  skipDay(): void {
+    const hours = 24;
+    this.time.advance(hours * SECONDS_PER_GAME_HOUR);
+
+    // The world at large: politics, faith, know-how, the crust, the record.
+    this.nations.update(this, hours);
+    this.diplomacy.update(this, hours);
+    this.culture.update(this, hours);
+    this.technology.update(this, hours);
+    this.tectonics.update(this, hours);
+    this.generations.update(this, hours);
+    this.history.update(this, hours);
+
+    // The settlement: what a day of work and a day of eating come to.
+    this.recomputeSettlement();
+    this.liveOffTheLand();
+  }
+
+  /**
+   * A day's eating and a day's work, without simulating either footstep.
+   *
+   * Production is what the settlement's own workshops are rated to make with
+   * the workers they actually have; consumption is what its people actually
+   * eat. Neither is invented for the occasion — they are the numbers the
+   * played game already keeps.
+   */
+  private liveOffTheLand(): void {
+    const s = this.settlement;
+    const mouths = this.npcs.length;
+    if (mouths === 0) return;
+
+    // Everyone eats. Children eat less than a grown labourer.
+    let eaten = 0;
+    for (const npc of this.npcs) eaten += npc.age < 14 ? 0.55 : 1;
+
+    // What the settlement's own stores and fields come to in a day. This is
+    // the same food figure the played game keeps, spread over the day.
+    const stored = s.foodDays * Math.max(1, mouths);
+    const grown = this.foodGrownPerDay();
+    const produced = grown + Math.min(stored, eaten);
+    const surplus = produced - eaten;
+
+    // What was eaten comes out of the stores, wherever it was kept.
+    this.consumeStoredFood(Math.min(stored, eaten));
+
+    for (const npc of this.npcs) {
+      // Hunger and rest settle towards what the day actually provided.
+      const fed = surplus >= 0 ? 1 : clamp01(produced / Math.max(1, eaten));
+      npc.needs.hunger = clamp(npc.needs.hunger + (fed * 100 - npc.needs.hunger) * 0.25, 0, 100);
+      npc.needs.rest = clamp(npc.needs.rest + (s.housingCapacity >= mouths ? 6 : -2), 0, 100);
+      npc.needs.health = clamp(
+        npc.needs.health + (npc.needs.hunger > 40 ? 1.2 : -3) - npc.frailty * 0.9,
+        0,
+        100,
+      );
+      npc.updateMood();
+      if (npc.needs.hunger <= 0 && npc.needs.health <= 2) {
+        this.killNpc(npc, 'ev.diedOfHunger', { name: npc.name });
+      }
+    }
+  }
+
+  /**
+   * Food the settlement brings in over a day, without walking any of it.
+   *
+   * Three sources, each counted from something that is actually there: the
+   * tilled ground and who is left to work it, the food growing within reach
+   * of the place, and the game within reach of its hunters. A settlement that
+   * has stripped its bushes and shot out its deer goes hungry, which is the
+   * same thing that would happen if every footstep were simulated.
+   */
+  private foodGrownPerDay(): number {
+    const s = this.settlement;
+    const adults = this.npcs.filter((n) => n.age >= WORKING_AGE && n.needs.health > 20);
+    if (adults.length === 0) return 0;
+
+    const season = this.time.snapshot().season;
+    const growing = season === 'winter' ? 0.3 : season === 'autumn' ? 1.2 : 1;
+
+    // Tilled ground, worked by whoever can work it. Land with nobody to farm
+    // it grows nothing, and farmers with no land grow nothing either.
+    let fields = 0;
+    for (let i = 0; i < this.terrain.overlay.length; i++) {
+      if (this.terrain.overlay[i] & (OVERLAY.Field | OVERLAY.Tilled)) fields++;
+    }
+    const farmers =
+      adults.filter((n) => n.profession === 'farmer').length + adults.length * 0.25;
+    const farmed = Math.min(fields * 0.03, farmers * 1.8) * growing;
+
+    // What the country around the settlement gives up to people walking over
+    // it. Counted from the food that is actually growing there, so a
+    // settlement that has stripped its bushes goes hungry.
+    let forage = 0;
+    this.nodeGrid.forEachNear(s.centre.x, s.centre.z, s.radius + 70, (n) => {
+      if (n.depleted) return;
+      for (const y of RESOURCES[n.kind].yields) {
+        if (isFood(y.item)) forage += y.amount * 0.02 * n.growth;
+      }
+    });
+    const gathered = Math.min(forage * growing, adults.length * 0.75);
+
+    // And what the hunters bring back, out of the animals that are there.
+    let game = 0;
+    for (const a of this.wildlife) {
+      if (Math.hypot(a.x - s.centre.x, a.z - s.centre.z) < s.radius + 160) game++;
+    }
+    const hunters =
+      adults.filter((n) => n.profession === 'hunter' || n.profession === 'fisher').length +
+      adults.length * 0.15;
+    const hunted = Math.min(game * 0.035, hunters * 1.3);
+
+    return farmed + gathered + hunted;
+  }
+
+  /** Takes `amount` of food out of wherever the settlement keeps it. */
+  private consumeStoredFood(amount: number): void {
+    let left = amount;
+    for (const b of this.buildings) {
+      if (left <= 0) break;
+      if (!b.complete) continue;
+      for (const slot of b.inventory.slots) {
+        if (left <= 0) break;
+        if (!slot || !isFood(slot.item)) continue;
+        const take = Math.min(slot.count, Math.ceil(left));
+        b.inventory.remove(slot.item, take);
+        left -= take;
+      }
+    }
   }
 
   /** Called once after a fresh world is generated. */
@@ -1006,6 +1150,52 @@ export class World {
     return npc;
   }
 
+  /**
+   * A child is born to this settlement.
+   *
+   * They are a person from the first day: their own name, their own span,
+   * their own turn of mind. What they are not is a worker — nobody puts a
+   * three-year-old on the job board — and the years take care of that on
+   * their own.
+   */
+  bearChild(parent: Npc): Npc {
+    const a = this.rng.range(0, Math.PI * 2);
+    const r = this.rng.range(1, 3);
+    const npc = this.spawnNpc(parent.x + Math.cos(a) * r, parent.z + Math.sin(a) * r, 'settler');
+    npc.age = 0;
+    // Born, so their span is drawn against a whole life rather than against
+    // the years an arriving settler had already lived.
+    npc.lifespan = Generations.humanLifespan(npc.rng);
+    npc.bornDay = this.time.totalDays;
+    // A child inherits a roof, not a trade.
+    npc.homeId = parent.homeId;
+    npc.workplaceId = 0;
+    npc.needs.hunger = 90;
+    npc.needs.rest = 95;
+    this.log.add(this.time, 'people', 'ev.born', { name: npc.name, parent: parent.name }, {
+      notable: true,
+      x: npc.x,
+      z: npc.z,
+    });
+    return npc;
+  }
+
+  /** A young animal, near the one that had it. */
+  bearAnimal(parent: Animal): Animal | null {
+    if (this.wildlife.length >= 600) return null;
+    const a = this.rng.range(0, Math.PI * 2);
+    const r = this.rng.range(2, 8);
+    const x = clamp(parent.x + Math.cos(a) * r, 4, this.terrain.worldSize - 4);
+    const z = clamp(parent.z + Math.sin(a) * r, 4, this.terrain.worldSize - 4);
+    if (this.terrain.waterDepthAt(x, z) > 0.4) return null;
+    const animal = createAnimal(this.nextId(), parent.species, x, z, this.rng);
+    animal.age = 0;
+    animal.y = this.terrain.heightAt(x, z);
+    this.wildlife.push(animal);
+    this.wildlifeById.set(animal.id, animal);
+    return animal;
+  }
+
   removeNpc(npc: Npc): void {
     this.jobs.releaseAllFor(npc.id);
     const home = this.buildingById.get(npc.homeId);
@@ -1751,6 +1941,7 @@ export class World {
     this.diplomacy.update(this, hours);
     this.culture.update(this, hours);
     this.technology.update(this, hours);
+    this.generations.update(this, hours);
     this.history.update(this, hours);
     this.updateSky();
     this.director.update(this, hours);
@@ -2242,6 +2433,9 @@ export class World {
       id: n.id,
       name: n.name,
       age: n.age,
+      lifespan: n.lifespan,
+      frailty: n.frailty,
+      bornDay: n.bornDay,
       profession: n.profession,
       x: n.x,
       z: n.z,
@@ -2266,7 +2460,15 @@ export class World {
     this.npcGrid.clear();
     for (const r of rows) {
       const npc = new Npc(r.id, r.name, r.seed);
-      npc.age = r.age;
+      npc.age = Number.isFinite(r.age) ? Math.max(0, r.age) : 25;
+      // A save from before people aged has no spans in it; the constructor
+      // already drew one, which is the right thing for a person who has been
+      // alive all along.
+      if (typeof r.lifespan === 'number' && r.lifespan > 1 && r.lifespan < 200) {
+        npc.lifespan = r.lifespan;
+      }
+      npc.frailty = typeof r.frailty === 'number' ? clamp01(r.frailty) : 0;
+      npc.bornDay = typeof r.bornDay === 'number' ? r.bornDay : -1;
       npc.profession = r.profession as ProfessionId;
       npc.x = r.x;
       npc.z = r.z;
@@ -2420,17 +2622,36 @@ export class World {
     this.jobs.restore(rows);
   }
 
-  serializeWildlife(): { id: number; species: string; x: number; z: number; age: number }[] {
-    return this.wildlife.map((a) => ({ id: a.id, species: a.species, x: a.x, z: a.z, age: a.age }));
+  serializeWildlife(): {
+    id: number;
+    species: string;
+    x: number;
+    z: number;
+    age: number;
+    lifespan: number;
+  }[] {
+    return this.wildlife.map((a) => ({
+      id: a.id,
+      species: a.species,
+      x: a.x,
+      z: a.z,
+      age: a.age,
+      lifespan: a.lifespan,
+    }));
   }
 
-  deserializeWildlife(rows: { id: number; species: string; x: number; z: number; age: number }[]): void {
+  deserializeWildlife(
+    rows: { id: number; species: string; x: number; z: number; age: number; lifespan?: number }[],
+  ): void {
     this.wildlife.length = 0;
     this.wildlifeById.clear();
     for (const r of rows) {
       if (!ANIMALS[r.species as AnimalSpecies]) continue;
       const a = createAnimal(r.id, r.species as AnimalSpecies, r.x, r.z, this.rng);
-      a.age = r.age;
+      a.age = Number.isFinite(r.age) ? Math.max(0, r.age) : 1;
+      if (typeof r.lifespan === 'number' && r.lifespan > 0.2 && r.lifespan < 60) {
+        a.lifespan = r.lifespan;
+      }
       a.y = this.terrain.heightAt(r.x, r.z);
       this.wildlife.push(a);
       this.wildlifeById.set(a.id, a);

@@ -430,8 +430,12 @@ export class TerrainRenderer {
       }
     }
 
-    // Only the quads that actually hold water get triangles. A quad touching
-    // the bank is kept, which is what gives the shader a thin edge to foam.
+    // A quad is kept only if some corner of it holds real water. A corner
+    // that is merely marked wet with no depth under it sits exactly on the
+    // ground, and a sheet lying on the ground fights the ground for every
+    // pixel -- which is the flicker along every shoreline. The shader
+    // discards what is left of the edge, so the sheet ends at the water line
+    // rather than carrying on over the bank.
     const indices: number[] = [];
     for (let qz = 0; qz < quads; qz++) {
       for (let qx = 0; qx < quads; qx++) {
@@ -439,7 +443,8 @@ export class TerrainRenderer {
         const b = a + 1;
         const cIdx = a + side;
         const dIdx = cIdx + 1;
-        if (!wetVertex[a] && !wetVertex[b] && !wetVertex[cIdx] && !wetVertex[dIdx]) continue;
+        const deepest = Math.max(depths[a], depths[b], depths[cIdx], depths[dIdx]);
+        if (deepest < 0.06) continue;
         indices.push(a, cIdx, dIdx, a, dIdx, b);
       }
     }

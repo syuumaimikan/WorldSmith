@@ -127,7 +127,19 @@ export const NPC_CARRY_CAPACITY = 12;
 export class Npc {
   readonly id: number;
   name: string;
+  /** Years lived. A real number: people have birthdays on ordinary days. */
   age: number;
+  /**
+   * The age this person's body starts giving way around, drawn once when they
+   * are born and theirs alone. Two people born the same spring do not die the
+   * same year, and a settlement where everyone lasts exactly seventy empties
+   * and fills in lurches.
+   */
+  lifespan: number;
+  /** 0..1, how far the years have taken them. Slows work and dims health. */
+  frailty = 0;
+  /** Day they were born, or a negative number for the first settlers. */
+  bornDay = -1;
   readonly seed: number;
   readonly rng: Rng;
   profession: ProfessionId = 'settler';
@@ -179,6 +191,13 @@ export class Npc {
     this.seed = seed;
     this.rng = new Rng(seed);
     this.age = this.rng.int(17, 58);
+    // Somebody who has already reached fifty-four evidently has a span of at
+    // least fifty-four. Drawing the two independently would hand a share of
+    // every settlement people who were born already past their time.
+    this.lifespan = Math.max(
+      this.age + this.rng.range(2, 34),
+      this.rng.stat(68, 13, 34, 97),
+    );
     this.scheduleOffset = this.rng.range(-1.1, 1.4);
     for (const s of ALL_SKILLS) this.skillXp[s] = 0;
   }
@@ -192,7 +211,11 @@ export class Npc {
     const base = skillMultiplier(this.skill(id));
     const fatigue = 0.62 + clamp01(this.needs.rest / 100) * 0.38;
     const health = 0.55 + clamp01(this.needs.health / 100) * 0.45;
-    return base * toolBonus * fatigue * health;
+    // The old are slower. Not useless -- an old hand knows the work -- but
+    // slower, and it is their own years that decide it rather than a number
+    // that applies to everyone at sixty.
+    const years = 1 - this.frailty * 0.45;
+    return base * toolBonus * fatigue * health * years;
   }
 
   addXp(id: SkillId, amount: number): void {

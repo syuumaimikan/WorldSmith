@@ -145,6 +145,12 @@ describe('famine', () => {
     const world = buildTestWorld();
     const fed = world.npcs[0];
     const starving = world.npcs[1];
+    // Both in the middle of their lives, so nothing here is old age.
+    for (const n of [fed, starving]) {
+      n.age = 25;
+      n.lifespan = 70;
+      n.frailty = 0;
+    }
     fed.needs.hunger = 90;
     fed.needs.health = 100;
     starving.needs.hunger = 10;

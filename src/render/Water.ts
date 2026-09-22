@@ -95,6 +95,11 @@ export const WATER_FRAG = /* glsl */ `
   varying vec3 vNormal;
 
   void main() {
+    // Where the sheet has run out there is no water, and drawing it anyway
+    // puts a transparent film on the bank that fights the ground for every
+    // pixel. It ends here instead.
+    if (vDepth < 0.03) discard;
+
     vec3 n = normalize(vNormal);
     vec3 view = normalize(cameraPosition - vWorld);
 
@@ -116,13 +121,16 @@ export const WATER_FRAG = /* glsl */ `
 
     // White water where it is running, and a pale edge where the sheet thins
     // out against the shore.
-    float shore = 1.0 - smoothstep(0.0, 0.55, vDepth);
+    float shore = smoothstep(0.03, 0.10, vDepth) * (1.0 - smoothstep(0.10, 0.65, vDepth));
     float foam = max(shore * 0.55, vFlow * 0.35);
     colour = mix(colour, vec3(0.92, 0.96, 0.99), foam * 0.55);
 
-    // Shallow water is see-through; deep water is not; foam is solid.
+    // Shallow water is see-through; deep water is not; foam is solid. The
+    // very edge fades out entirely, so the water line is a water line rather
+    // than a cut edge of geometry.
     float alpha = mix(0.40, 0.96, deepness);
     alpha = max(alpha, foam * 0.85);
+    alpha *= smoothstep(0.03, 0.22, vDepth);
     gl_FragColor = vec4(colour, alpha);
 
     #include <tonemapping_fragment>
@@ -157,6 +165,11 @@ export function makeWaterMaterial(): { material: ShaderMaterial; uniforms: Water
     uniforms: uniforms as unknown as Record<string, { value: unknown }>,
     transparent: true,
     depthWrite: false,
+    // Nudged towards the camera so a sheet lying a centimetre above the mud
+    // never ties with it in the depth buffer.
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   });
   return { material, uniforms };
 }

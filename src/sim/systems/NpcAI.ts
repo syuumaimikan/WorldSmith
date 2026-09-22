@@ -9,6 +9,7 @@
  */
 
 import type { World } from '../World';
+import { isChild } from '../Generations';
 import { Npc, NPC_WALK_SPEED, NpcActivity } from '../Npc';
 import { Building } from '../Building';
 import { HaulJob, Job } from '../Jobs';
@@ -210,6 +211,18 @@ function findCarriedFood(npc: Npc): ItemId | null {
  * workplace exists to do, and falls back to the board when it has nothing.
  */
 function assignWork(world: World, npc: Npc): void {
+  // A child is not a small adult with a smaller axe. They eat, they sleep,
+  // they get under people's feet, and one day they are old enough to work.
+  if (isChild(npc)) {
+    const c = world.settlement.centre;
+    npc.setTask('wander', {
+      x: c.x + npc.rng.range(-16, 16),
+      z: c.z + npc.rng.range(-16, 16),
+      interruptible: true,
+    });
+    return;
+  }
+
   const boardFirst =
     npc.profession === 'builder' || npc.profession === 'hauler' || npc.profession === 'settler';
 

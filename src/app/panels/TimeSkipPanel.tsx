@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
 import { Game } from '../../game/Game';
-import { Bar, EmptyNote, Window } from '../components/common';
+import { EmptyNote, Window } from '../components/common';
 import { useT } from '../../i18n';
-import { ANCIENT_YEARS, preSimulate } from '../../sim/Presimulate';
 import { DAYS_PER_YEAR } from '../../sim/Time';
+import { LoadingScreen } from '../screens/LoadingScreen';
 
 interface Props {
   game: Game;
@@ -13,14 +13,14 @@ interface Props {
 const OPTIONS = [1, 10, 100, 500];
 
 /**
- * Letting the world get on without you.
+ * Letting the years go by.
  *
- * This runs the same world-scale systems the "ancient world" option runs
- * before the game starts: polities, wars, faith, know-how and the crust. It
- * does not run the settlement — a century of six people carrying planks is
- * not something that can be fast-forwarded honestly, so the settlement is
- * held where it stands and the panel says so rather than inventing a hundred
- * years of history for it.
+ * The world is not paused and the settlement is not held: every day of it is
+ * actually stepped, at day scale rather than second scale. Nobody walks
+ * anywhere, but food is grown and eaten, buildings weather, people age and
+ * die, children are born, countries rise and fall, and the chronicle records
+ * all of it. A hundred years later the settlement is standing there full of
+ * people nobody has met.
  */
 export function TimeSkipPanel({ game, onClose }: Props): JSX.Element {
   const t = useT();
@@ -28,7 +28,7 @@ export function TimeSkipPanel({ game, onClose }: Props): JSX.Element {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [reachedYear, setReachedYear] = useState(world.time.snapshot().year);
-  const [done, setDone] = useState<number | null>(null);
+  const [done, setDone] = useState<{ years: number; born: number; died: number } | null>(null);
 
   const skip = useCallback(
     async (years: number) => {
@@ -37,28 +37,58 @@ export function TimeSkipPanel({ game, onClose }: Props): JSX.Element {
       setDone(null);
       const startYear = world.time.snapshot().year;
 
-      // In slices, handing the thread back between them, so the bar moves and
-      // the tab does not appear to have died.
-      const slices = Math.max(1, Math.min(40, Math.round(years / 2) || 1));
-      for (let i = 0; i < slices; i++) {
-        preSimulate(world, years / slices);
-        setProgress((i + 1) / slices);
+      // Counted as they happen, because the event log will have rolled over
+      // long before a century is out.
+      let born = 0;
+      let died = 0;
+      const log = world.log;
+      const original = log.add.bind(log);
+      log.add = ((...args: Parameters<typeof original>) => {
+        const key = args[2];
+        if (key === 'ev.born') born++;
+        if (key === 'ev.diedOfAge' || key === 'ev.diedOfHunger' || key === 'ev.diedOfIllness') {
+          died++;
+        }
+        return original(...args);
+      }) as typeof log.add;
+
+      const totalDays = Math.max(1, Math.round(years * DAYS_PER_YEAR));
+      // Long enough a slice that this is not mostly scheduling overhead, short
+      // enough that the bar moves and the tab stays answerable.
+      const slice = Math.max(1, Math.ceil(totalDays / 120));
+      for (let day = 0; day < totalDays; day += slice) {
+        const n = Math.min(slice, totalDays - day);
+        for (let i = 0; i < n; i++) world.skipDay();
+        setProgress((day + n) / totalDays);
         setReachedYear(world.time.snapshot().year);
         await new Promise((r) => setTimeout(r, 0));
       }
 
+      log.add = original;
       game.afterTimeSkip();
       setRunning(false);
       setProgress(0);
-      setDone(world.time.snapshot().year - startYear);
+      setDone({ years: world.time.snapshot().year - startYear, born, died });
     },
     [game, running, world],
   );
 
+  if (running) {
+    return (
+      <LoadingScreen
+        progress={{
+          stage: 'skip.running',
+          fraction: progress,
+          params: { year: reachedYear },
+        }}
+      />
+    );
+  }
+
   const year = world.time.snapshot().year;
 
   return (
-    <Window title={t('skip.title')} onClose={running ? () => undefined : onClose} width="narrow">
+    <Window title={t('skip.title')} onClose={onClose} width="narrow">
       <div className="tiny muted" style={{ lineHeight: 1.7, marginBottom: 12 }}>
         {t('skip.blurb')}
       </div>
@@ -74,29 +104,22 @@ export function TimeSkipPanel({ game, onClose }: Props): JSX.Element {
         </div>
       </div>
 
-      {running ? (
-        <>
-          <div className="tiny muted" style={{ marginBottom: 6 }}>
-            {t('skip.running', { year: reachedYear })}
-          </div>
-          <Bar value={progress} />
-        </>
-      ) : (
-        <div className="menu-actions" style={{ width: '100%' }}>
-          {OPTIONS.map((y) => (
-            <button key={y} className="btn" onClick={() => void skip(y)}>
-              {t('skip.years', { years: y })}
-            </button>
-          ))}
-          <button className="btn ghost" onClick={() => void skip(ANCIENT_YEARS)}>
-            {t('skip.anAge', { years: ANCIENT_YEARS })}
+      <div className="menu-actions" style={{ width: '100%' }}>
+        {OPTIONS.map((y) => (
+          <button key={y} className="btn" onClick={() => void skip(y)}>
+            {t('skip.years', { years: y })}
           </button>
-        </div>
-      )}
+        ))}
+      </div>
 
       {done !== null && (
         <EmptyNote>
-          {t('skip.done', { years: done, day: Math.round(world.time.totalDays / DAYS_PER_YEAR) })}
+          {t('skip.done', {
+            years: done.years,
+            born: done.born,
+            died: done.died,
+            people: world.npcs.length,
+          })}
         </EmptyNote>
       )}
     </Window>

@@ -32,6 +32,8 @@ export interface AnimalDef {
   herdSize: [number, number];
   /** Population target per square kilometre of suitable terrain. */
   density: number;
+  /** Years this kind lives, before an individual's own luck is drawn. */
+  lifespan: [number, number];
 }
 
 export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
@@ -52,6 +54,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     size: 1,
     herdSize: [2, 5],
     density: 26,
+    lifespan: [9, 16],
   },
   boar: {
     species: 'boar',
@@ -70,6 +73,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     size: 0.85,
     herdSize: [1, 3],
     density: 14,
+    lifespan: [8, 14],
   },
   rabbit: {
     species: 'rabbit',
@@ -85,6 +89,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     size: 0.4,
     herdSize: [1, 4],
     density: 40,
+    lifespan: [2, 5],
   },
   fox: {
     species: 'fox',
@@ -100,6 +105,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     size: 0.5,
     herdSize: [1, 1],
     density: 8,
+    lifespan: [4, 9],
   },
   wolf: {
     species: 'wolf',
@@ -115,6 +121,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     size: 0.8,
     herdSize: [2, 4],
     density: 6,
+    lifespan: [7, 14],
   },
   sheep: {
     species: 'sheep',
@@ -133,6 +140,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     size: 0.7,
     herdSize: [3, 6],
     density: 16,
+    lifespan: [9, 15],
   },
   bird: {
     species: 'bird',
@@ -155,6 +163,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     size: 0.22,
     herdSize: [2, 6],
     density: 34,
+    lifespan: [3, 8],
   },
 };
 
@@ -175,6 +184,8 @@ export interface Animal {
   /** NPC currently hunting this animal. */
   huntedBy: number;
   age: number;
+  /** The age this one starts failing around. Its own, not its species'. */
+  lifespan: number;
   /** Flight altitude for birds. */
   altitude: number;
   rngSeed: number;
@@ -201,7 +212,13 @@ export function createAnimal(
     targetZ: z,
     dead: false,
     huntedBy: 0,
-    age: rng.range(0, 4),
+    age: rng.range(0, Math.max(1, (ANIMALS[species]?.lifespan[0] ?? 6) * 0.7)),
+    lifespan: (() => {
+      const def = ANIMALS[species];
+      if (!def) return 6;
+      const [lo, hi] = def.lifespan;
+      return rng.stat((lo + hi) / 2, (hi - lo) / 4, lo * 0.5, hi * 1.25);
+    })(),
     altitude: species === 'bird' ? rng.range(6, 16) : 0,
     rngSeed: rng.int(0, 1e9),
   };

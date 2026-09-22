@@ -45,6 +45,10 @@ export interface SavedNpc {
   id: number;
   name: string;
   age: number;
+  /** The age this one's body starts giving way around. Theirs alone. */
+  lifespan?: number;
+  frailty?: number;
+  bornDay?: number;
   profession: string;
   x: number;
   z: number;
@@ -140,7 +144,7 @@ export interface SaveData {
   disease: Record<string, unknown>;
   volcanoes: SavedVolcano[];
   economy: Record<string, unknown>;
-  wildlife: { id: number; species: string; x: number; z: number; age: number }[];
+  wildlife: { id: number; species: string; x: number; z: number; age: number; lifespan?: number }[];
   nextEntityId: number;
   tutorialStep: number;
   /** Settler the player was driving when the game was saved, or 0. */
