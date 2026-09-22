@@ -11,12 +11,19 @@
  */
 
 import { Terrain, OVERLAY } from '../world/Terrain';
-import { ResourceNode, RESOURCES, ResourceKind } from '../world/resources';
+import {
+  growsAt,
+  ResourceNode,
+  RESOURCES,
+  ResourceKind,
+  sizeOf,
+  yieldOf,
+} from '../world/resources';
 import { Biome, OreVein, PointOfInterest, WorldConfig } from '../world/types';
 import { SpatialGrid } from '../core/SpatialGrid';
 import { Rng } from '../core/rng';
 import { clamp, clamp01 } from '../core/math';
-import { GameTime, SeasonName, SECONDS_PER_GAME_HOUR } from './Time';
+import { DAYS_PER_YEAR, GameTime, SeasonName, SECONDS_PER_GAME_HOUR } from './Time';
 import { Player, Obstacle } from './Player';
 import { ItemId, ITEMS, FOOD_PRIORITY, isFood } from '../data/items';
 import { EventLog } from './EventLog';
@@ -151,6 +158,8 @@ export class World {
   private nextEntityId = 1;
   treesFelled = 0;
   private regrowing: ResourceNode[] = [];
+  /** Days of growing not yet applied to the woodland. */
+  private woodlandDebt = 0;
   private jobTimer = 0;
   private settlementTimer = 0;
   private assignmentTimer = 0;
@@ -241,10 +250,108 @@ export class World {
     this.generations.update(this, hours);
     this.history.update(this, hours);
 
+    // The country: what regrows, what gets older, what falls down.
+    this.regrowNodes();
+    this.ageWoodland(1);
+    this.spreadForest();
+
     // The settlement: a day of work, and a day of eating.
     this.recomputeSettlement();
     this.development.update(this, 1);
     this.liveOffTheLand();
+  }
+
+  /**
+   * A day of growing older, for everything with roots.
+   *
+   * Run in batches rather than every day. Nothing here changes visibly from
+   * one dawn to the next -- a tree puts on a few millimetres -- and walking
+   * a couple of hundred thousand nodes every simulated day would make a
+   * skipped century unaffordable for no gain anybody could see. A month at a
+   * time is well inside what the eye can tell.
+   */
+  private ageWoodland(days: number): void {
+    this.woodlandDebt += days;
+    if (this.woodlandDebt < 30) return;
+    const elapsed = this.woodlandDebt;
+    this.woodlandDebt = 0;
+    const years = elapsed / DAYS_PER_YEAR;
+
+    for (let i = this.nodes.length - 1; i >= 0; i--) {
+      const n = this.nodes[i];
+      const def = RESOURCES[n.kind];
+      if (!def.life) {
+        if (n.growth < 1) n.growth = Math.min(1, n.growth + elapsed / 42);
+        continue;
+      }
+
+      n.age += years;
+      n.growth = Math.min(1, n.age / def.life.matureYears);
+
+      // A growing tree is worth more timber than it was. It does not gain
+      // back what has already been cut out of it.
+      if (!n.depleted) {
+        const want = yieldOf(n);
+        if (want > n.maxAmount) n.amount += want - n.maxAmount;
+        n.maxAmount = want;
+        if (n.amount > n.maxAmount) n.amount = n.maxAmount;
+      }
+
+      // Old age. Past its span a tree is on borrowed time, and the longer it
+      // stands the likelier the next storm is the one that takes it. What is
+      // left is a standing dead trunk, which is its own kind of landmark.
+      if (n.age > def.life.maxYears) {
+        const over = clamp01((n.age - def.life.maxYears) / (def.life.maxYears * 0.3));
+        if (this.rng.chance(clamp01(over * elapsed * 0.004))) {
+          this.fellByAge(n);
+        }
+      }
+    }
+  }
+
+  /** An old tree comes down where it stood. */
+  private fellByAge(node: ResourceNode): void {
+    const x = node.x;
+    const z = node.z;
+    const wasBig = sizeOf(node) > 1.4;
+    this.removeNode(node);
+    // Something stays: a dead trunk, and the gap it leaves lets light in for
+    // whatever comes next.
+    const stump: ResourceNode = {
+      id: this.nextId(),
+      kind: 'dead_tree',
+      x,
+      z,
+      y: this.terrain.heightAt(x, z),
+      rot: this.rng.range(0, Math.PI * 2),
+      scale: wasBig ? 1.5 : 1,
+      variant: this.rng.int(0, 1),
+      amount: wasBig ? 3 : 1,
+      maxAmount: wasBig ? 3 : 1,
+      growth: 1,
+      age: 0,
+      regrowIn: -1,
+      reservedBy: 0,
+      work: 0,
+      depleted: false,
+    };
+    this.addNode(stump);
+  }
+
+  /** Depleted nodes coming back, shared by played and skipped days. */
+  private regrowNodes(): void {
+    for (let i = this.regrowing.length - 1; i >= 0; i--) {
+      const n = this.regrowing[i];
+      n.regrowIn -= 1;
+      if (n.regrowIn <= 0) {
+        n.depleted = false;
+        n.amount = n.maxAmount;
+        n.growth = 1;
+        n.regrowIn = -1;
+        this.regrowing[i] = this.regrowing[this.regrowing.length - 1];
+        this.regrowing.pop();
+      }
+    }
   }
 
   /**
@@ -561,6 +668,7 @@ export class World {
       amount: def.units,
       maxAmount: def.units,
       growth: 0.08,
+      age: 0,
       regrowIn: -1,
       reservedBy: 0,
       work: 0,
@@ -1697,23 +1805,9 @@ export class World {
   }
 
   private onNewDay(day: number): void {
-    // Regrowth.
-    for (let i = this.regrowing.length - 1; i >= 0; i--) {
-      const n = this.regrowing[i];
-      n.regrowIn -= 1;
-      if (n.regrowIn <= 0) {
-        n.depleted = false;
-        n.amount = n.maxAmount;
-        n.growth = 1;
-        n.regrowIn = -1;
-        this.regrowing[i] = this.regrowing[this.regrowing.length - 1];
-        this.regrowing.pop();
-      }
-    }
+    this.regrowNodes();
 
-    for (const n of this.nodes) {
-      if (n.growth < 1) n.growth = Math.min(1, n.growth + 1 / 42);
-    }
+    this.ageWoodland(1);
 
     // Natural forest spread, so woodland recovers where it is left alone.
     this.spreadForest();
@@ -1756,6 +1850,10 @@ export class World {
       if (biome === Biome.Desert || biome === Biome.Alpine || biome === Biome.Tundra) continue;
       if (this.terrain.slopeAt(x, z) > 0.6) continue;
       if (this.settlement.contains(x, z)) continue;
+      // A seed carried uphill into the cold, or downhill into the heat, does
+      // not become a tree. This is what keeps a species inside its own range
+      // instead of letting one lucky oak colonise the tundra over a century.
+      if (!growsAt(parent.kind, this.terrain.temperatureAt(x, z))) continue;
       this.plantSapling(parent.kind, x, z);
     }
   }

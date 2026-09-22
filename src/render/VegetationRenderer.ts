@@ -19,7 +19,7 @@ import {
   Scene,
   Vector3,
 } from 'three';
-import { ResourceKind, ResourceNode } from '../world/resources';
+import { ResourceKind, ResourceNode, sizeOf } from '../world/resources';
 import { Terrain } from '../world/Terrain';
 import { Biome } from '../world/types';
 import { buildFloraGeometry, Lod, VARIANT_COUNT } from './geometry/flora';
@@ -145,7 +145,9 @@ export class VegetationRenderer {
 
       if (bucket.count >= bucket.capacity) this.growBucket(bucket);
 
-      const s = n.scale * (0.28 + n.growth * 0.72);
+      // Size comes from age, not from a growth flag: a four-hundred-year
+      // cedar is drawn as one.
+      const s = n.scale * sizeOf(n);
       this.pos.set(n.x, n.y, n.z);
       this.quat.setFromAxisAngle(this.up, n.rot);
       this.scale.set(s, s, s);

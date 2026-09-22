@@ -1095,15 +1095,21 @@ function moveAlongPath(world: World, npc: Npc, dt: number): void {
 
 function moveBy(world: World, npc: Npc, dx: number, dz: number): void {
   const t = world.terrain;
-  let nx = npc.x + dx;
-  let nz = npc.z + dz;
+  const nx = npc.x + dx;
+  const nz = npc.z + dz;
 
-  // Refuse to walk into deep water or off the map.
-  const depth = t.waterDepthAt(nx, nz);
-  if (depth > 0.9) {
-    nx = npc.x;
-    nz = npc.z;
-  }
+  // The legs obey exactly the rule the pathfinder plans with.
+  //
+  // They used not to: the map called a tile passable if it had less than
+  // three-quarters of a metre of water on it, and the body refused to step
+  // anywhere the bilinear depth came out over nine-tenths. Along a gently
+  // shelving coast those two disagree over a wide band, and a settler routed
+  // across it walks into the shallows, stops, repaths, and stands there for
+  // the rest of their life -- while the site they were carrying three logs to
+  // waits for them. One rule, asked the same way, or this comes back.
+  const here = t.isWalkableTile(t.tileX(npc.x), t.tileZ(npc.z));
+  if (here && !t.isWalkableTile(t.tileX(nx), t.tileZ(nz))) return;
+
   npc.x = clamp(nx, 2, t.worldSize - 2);
   npc.z = clamp(nz, 2, t.worldSize - 2);
 }

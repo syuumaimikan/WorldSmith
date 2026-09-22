@@ -24,6 +24,16 @@ export type ItemId =
   | 'hide'
   | 'herbs'
   | 'reed'
+  | 'nuts'
+  | 'mushrooms'
+  | 'bamboo'
+  | 'tin_ore'
+  | 'gold_nugget'
+  | 'silver_ore'
+  | 'salt'
+  | 'obsidian'
+  | 'limestone'
+  | 'flint'
   // processed
   | 'plank'
   | 'beam'
@@ -43,6 +53,7 @@ export type ItemId =
   | 'pottery'
   | 'furniture'
   | 'preserves'
+  | 'bronze_ingot'
   // tools
   | 'axe'
   | 'pickaxe'
@@ -488,6 +499,118 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     toolFor: 'saw',
     description: 'Turns logs into planks with far less waste.',
   }),
+  nuts: def({
+    id: 'nuts',
+    name: 'Nuts',
+    category: 'food',
+    stackSize: 16,
+    weight: 1,
+    value: 3,
+    color: 0x8a6438,
+    nutrition: 14,
+    description: 'Hazel and chestnut. Keeps all winter if it stays dry.',
+  }),
+  mushrooms: def({
+    id: 'mushrooms',
+    name: 'Mushrooms',
+    category: 'food',
+    stackSize: 12,
+    weight: 1,
+    value: 4,
+    color: 0xb08a6a,
+    nutrition: 9,
+    description: 'Good food, if you know which ones.',
+  }),
+  bamboo: def({
+    id: 'bamboo',
+    name: 'Bamboo',
+    category: 'raw',
+    stackSize: 12,
+    weight: 6,
+    value: 5,
+    color: 0x9cb556,
+    description: 'Light, straight and stronger than it looks. Grows back in a season.',
+  }),
+  tin_ore: def({
+    id: 'tin_ore',
+    name: 'Tin Ore',
+    category: 'raw',
+    stackSize: 10,
+    weight: 15,
+    value: 14,
+    color: 0xa8aab0,
+    description: 'Scarce, dull, and the difference between copper and bronze.',
+  }),
+  gold_nugget: def({
+    id: 'gold_nugget',
+    name: 'Gold',
+    category: 'raw',
+    stackSize: 8,
+    weight: 19,
+    value: 90,
+    color: 0xe0b03c,
+    description: 'Too soft to work with and worth more than anything you could make of it.',
+  }),
+  silver_ore: def({
+    id: 'silver_ore',
+    name: 'Silver Ore',
+    category: 'raw',
+    stackSize: 10,
+    weight: 16,
+    value: 38,
+    color: 0xc8ccd4,
+    description: 'Dark ore with a bright heart.',
+  }),
+  salt: def({
+    id: 'salt',
+    name: 'Salt',
+    category: 'raw',
+    stackSize: 16,
+    weight: 8,
+    value: 12,
+    color: 0xeef0f2,
+    description: 'Keeps meat through a winter, which is worth more than it sounds.',
+  }),
+  obsidian: def({
+    id: 'obsidian',
+    name: 'Obsidian',
+    category: 'raw',
+    stackSize: 10,
+    weight: 14,
+    value: 16,
+    color: 0x241f2c,
+    description: 'Volcanic glass. Takes an edge no metal of this age can match.',
+  }),
+  limestone: def({
+    id: 'limestone',
+    name: 'Limestone',
+    category: 'raw',
+    stackSize: 12,
+    weight: 17,
+    value: 4,
+    color: 0xd2cdbc,
+    description: 'Soft, pale rock. Burns down to mortar.',
+  }),
+  flint: def({
+    id: 'flint',
+    name: 'Flint',
+    category: 'raw',
+    stackSize: 16,
+    weight: 4,
+    value: 5,
+    color: 0x4a4a52,
+    description: 'Strikes a spark and breaks to an edge. The first tool material there was.',
+  }),
+  bronze_ingot: def({
+    id: 'bronze_ingot',
+    name: 'Bronze Ingot',
+    category: 'material',
+    stackSize: 8,
+    weight: 15,
+    value: 52,
+    color: 0xb07840,
+    description: 'Copper and tin together, and harder than either.',
+  }),
   fishing_rod: def({
     id: 'fishing_rod',
     name: 'Fishing Rod',
@@ -517,4 +640,14 @@ export function nutritionOf(id: ItemId): number {
 }
 
 /** Items a starving settlement will eat, best first. */
-export const FOOD_PRIORITY: ItemId[] = ['bread', 'preserves', 'meat', 'fish', 'vegetables', 'berries', 'grain'];
+export const FOOD_PRIORITY: ItemId[] = [
+  'bread',
+  'preserves',
+  'meat',
+  'fish',
+  'vegetables',
+  'nuts',
+  'mushrooms',
+  'berries',
+  'grain',
+];

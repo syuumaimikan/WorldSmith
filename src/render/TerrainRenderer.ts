@@ -240,6 +240,44 @@ export class TerrainRenderer {
     c.dirty = false;
   }
 
+  /**
+   * A smooth patchiness field over the ground, 0..1.
+   *
+   * Real ground is blotchy at a scale of tens of metres -- damper hollows,
+   * thinner soil over a rise, a stretch that got grazed -- and it is that
+   * scale, not per-triangle noise, that makes a hillside look like a
+   * hillside. Value noise on a lattice a few tiles wide, smoothed, costs
+   * almost nothing and is stable: the same tile gets the same value every
+   * time its chunk is rebuilt.
+   */
+  private groundVariation(tx: number, tz: number): number {
+    const at = (gx: number, gz: number): number =>
+      this.jitterRandom(((gx * 73856093) ^ (gz * 19349663)) >>> 0);
+    let sum = 0;
+    let amp = 0;
+    for (const [cell, weight] of [
+      [9, 0.55],
+      [3, 0.3],
+      [1, 0.15],
+    ] as [number, number][]) {
+      const fx = tx / cell;
+      const fz = tz / cell;
+      const gx = Math.floor(fx);
+      const gz = Math.floor(fz);
+      const sx = fx - gx;
+      const sz = fz - gz;
+      const ux = sx * sx * (3 - 2 * sx);
+      const uz = sz * sz * (3 - 2 * sz);
+      const a = at(gx, gz);
+      const b = at(gx + 1, gz);
+      const cc = at(gx, gz + 1);
+      const dd = at(gx + 1, gz + 1);
+      sum += (a + (b - a) * ux + (cc - a + (dd - cc - b + a) * ux) * uz) * weight;
+      amp += weight;
+    }
+    return sum / amp;
+  }
+
   // ---------------------------------------------------------------- ground
 
   private buildGround(c: Chunk, lod: number): BufferGeometry {
@@ -312,7 +350,11 @@ export class TerrainRenderer {
         const moist = d.moisture[mi];
         const overlay = t.overlay[mi];
         const traffic = t.traffic[mi];
-        const jitter = this.jitterRandom(mi * 7 + c.index);
+        // One value for the whole quad, drawn from a field that varies
+        // smoothly across the map. Two independent random values per quad --
+        // one for each triangle -- was what turned every hillside into a
+        // chequerboard: the eye reads the pair of triangles, not the tile.
+        const jitter = this.groundVariation(mx, mz);
         const avgH = (h00 + h10 + h01 + h11) * 0.25;
 
         const span = ts * step;
@@ -320,11 +362,13 @@ export class TerrainRenderer {
         const slopeA = Math.atan(Math.hypot(h11 - h01, h01 - h00) / span);
         const slopeB = Math.atan(Math.hypot(h10 - h00, h11 - h10) / span);
 
+        // The two triangles of a quad differ only where they really do
+        // differ, which is how steep each of them is.
         const cA = groundColor(biome, avgH, temp, moist, slopeA, overlay, traffic, jitter, this.tint);
-        const cB = groundColor(
-          biome, avgH, temp, moist, slopeB, overlay, traffic,
-          this.jitterRandom(mi * 13 + c.index + 1), this.tint,
-        );
+        const cB =
+          Math.abs(slopeA - slopeB) < 0.02
+            ? cA
+            : groundColor(biome, avgH, temp, moist, slopeB, overlay, traffic, jitter, this.tint);
 
         pushTri(x0, h00, z0, x0, h01, z1, x1, h11, z1, cA);
         pushTri(x0, h00, z0, x1, h11, z1, x1, h10, z0, cB);

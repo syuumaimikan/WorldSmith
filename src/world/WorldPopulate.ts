@@ -10,7 +10,14 @@ import { Rng } from '../core/rng';
 import { Noise2D } from '../core/noise';
 import { clamp01, smoothstep } from '../core/math';
 import { Biome, OreVein, PointOfInterest, TerrainData, WorldConfig } from './types';
-import { BIOME_FLORA, RESOURCES, ResourceKind, ResourceNode } from './resources';
+import {
+  BIOME_FLORA,
+  growsAt,
+  RESOURCES,
+  ResourceKind,
+  ResourceNode,
+  yieldOf,
+} from './resources';
 import type { ProgressFn } from './TerrainGen';
 
 /** Global tuning so biome tables stay readable as "relative" densities. */
@@ -79,7 +86,20 @@ export function populateWorld(
       const p = (density * tileArea) / 100;
       if (!rng.chance(Math.min(0.85, p))) continue;
 
-      const kind = rng.weighted(flora.entries.map((e) => ({ value: e.kind, weight: e.weight })));
+      // Biome is too blunt on its own. A temperate forest at the edge of the
+      // ice and one on the tropic line are the same biome and should not hold
+      // the same trees, so a species that cannot stand the local temperature
+      // simply is not what grew here. Three tries, then the tile stays empty:
+      // the thinning at the edge of a species' range is the point.
+      let kind: ResourceKind | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const pick = rng.weighted(flora.entries.map((e) => ({ value: e.kind, weight: e.weight })));
+        if (growsAt(pick, terrain.temperature[i])) {
+          kind = pick;
+          break;
+        }
+      }
+      if (!kind) continue;
       const def = RESOURCES[kind];
 
       // Big things need room; reject if a neighbour tile is already taken.
@@ -197,7 +217,7 @@ function makeNode(
   scale: number,
 ): ResourceNode {
   const def = RESOURCES[kind];
-  return {
+  const node: ResourceNode = {
     id,
     kind,
     x,
@@ -209,11 +229,27 @@ function makeNode(
     amount: def.units,
     maxAmount: def.units,
     growth: 1,
+    age: 0,
     regrowIn: -1,
     reservedBy: 0,
     work: 0,
     depleted: false,
   };
+  if (!def.life) return node;
+
+  // A wood is not all one age. Most of it is young, because most seedlings
+  // never make it; a good part of it is mature; and every so often there is
+  // one that was already old when the last people who saw it were born.
+  // Drawing the ages this way is what makes a forest look like it grew rather
+  // than like it was placed.
+  const L = def.life;
+  node.age = rng.chance(0.03)
+    ? L.matureYears + (L.maxYears - L.matureYears) * Math.pow(rng.next(), 1.4)
+    : Math.min(L.maxYears, L.matureYears * (0.1 + Math.pow(rng.next(), 1.8) * 2.4));
+  node.growth = Math.min(1, node.age / L.matureYears);
+  node.maxAmount = yieldOf(node);
+  node.amount = node.maxAmount;
+  return node;
 }
 
 // -------------------------------------------------------------------------

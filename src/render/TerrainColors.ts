@@ -92,6 +92,27 @@ export function groundColor(
     c = mixHex(c, PALETTE.terrain.grassDry, clamp01((0.35 - moisture) * 2.2) * 0.55);
   }
 
+  // Patchiness. Ground is never one colour over a whole field: there are
+  // damper hollows and thinner, drier stretches, and the blotching happens at
+  // a scale of tens of metres rather than tile by tile. This is what does the
+  // work a texture would do, and it is worth far more than value noise.
+  if (
+    biome === Biome.Grassland ||
+    biome === Biome.TemperateForest ||
+    biome === Biome.DenseForest ||
+    biome === Biome.Savanna ||
+    biome === Biome.Taiga ||
+    biome === Biome.Wetland
+  ) {
+    const blotch = (jitter - 0.5) * 2;
+    if (blotch > 0) c = mixHex(c, PALETTE.terrain.grassDry, blotch * 0.3);
+    else c = mixHex(c, PALETTE.terrain.grassLush, -blotch * 0.34);
+  } else if (biome === Biome.Mountain || biome === Biome.Alpine) {
+    c = mixHex(c, PALETTE.terrain.rockDark, clamp01((jitter - 0.45) * 1.4) * 0.35);
+  } else if (biome === Biome.Desert || biome === Biome.Beach) {
+    c = mixHex(c, PALETTE.terrain.dirt, clamp01((jitter - 0.55) * 1.6) * 0.22);
+  }
+
   // Steep faces expose rock. Two rock tones keep cliffs from reading as flat.
   const rockBlend = smoothstep(0.42, 0.78, faceSlope);
   if (rockBlend > 0) {
@@ -128,8 +149,10 @@ export function groundColor(
     c = mixHex(c, PALETTE.terrain.path, 0.78);
   }
 
-  // Per-face value jitter stands in for texture under flat shading.
-  return shade(c, 0.93 + jitter * 0.14);
+  // A last, gentle shading wobble. Small: the colour variation above is
+  // already doing the work, and stacking a heavy value jitter on top of it
+  // is what made flat ground look tiled.
+  return shade(c, 0.965 + jitter * 0.07);
 }
 
 /** Water surface colour from depth, used by the water mesh. */

@@ -6,12 +6,13 @@
  */
 
 import type { WorldConfig, OreVein, PointOfInterest } from '../world/types';
-import type { ResourceNode } from '../world/resources';
+import { RESOURCES } from '../world/resources';
+import type { ResourceKind, ResourceNode } from '../world/resources';
 import type { WorldEvent } from '../sim/EventLog';
 import type { SerializedInventory } from '../sim/Inventory';
 import type { GameSpeed } from '../sim/Time';
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 export interface SavedTerrain {
   gridSize: number;
@@ -221,12 +222,51 @@ export function migrate(raw: AnySave): SaveData {
     data.technology = data.technology ?? {};
     data.version = 6;
   }
+  if (data.version < 7) {
+    // v6 trees had no age, only a maturity flag. Anything already standing is
+    // taken to be grown, which is what it looked like, and starts its clock
+    // from there.
+    for (const n of data.nodes ?? []) {
+      if (typeof n.age !== 'number') {
+        const life = RESOURCES[n.kind as ResourceKind]?.life;
+        n.age = life ? life.matureYears * (typeof n.growth === 'number' ? n.growth : 1) : 0;
+      }
+    }
+    data.version = 7;
+  }
 
   return data;
 }
 
+/**
+ * Brings every resource node back inside the range the simulation assumes.
+ *
+ * A save file is untrusted input. Most of the fields here feed arithmetic that
+ * runs every frame or every day, and one NaN or one negative count in a save
+ * silently poisons the whole world rather than failing loudly, so each one is
+ * clamped on the way in.
+ */
+function sanitiseNodes(data: AnySave): void {
+  const num = (v: unknown, lo: number, hi: number, fallback: number): number => {
+    const n = typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+    return n < lo ? lo : n > hi ? hi : n;
+  };
+  const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+  for (const n of nodes) {
+    n.age = num(n.age, 0, 100000, 0);
+    n.growth = num(n.growth, 0, 1, 1);
+    n.scale = num(n.scale, 0.05, 20, 1);
+    n.maxAmount = Math.round(num(n.maxAmount, 0, 10000, 1));
+    n.amount = Math.round(num(n.amount, 0, n.maxAmount, 0));
+    n.work = num(n.work, 0, 1e6, 0);
+    n.regrowIn = num(n.regrowIn, -1, 100000, -1);
+    n.rot = num(n.rot, -100, 100, 0);
+  }
+}
+
 /** Rejects obviously corrupt or hostile save payloads before they are used. */
 export function validate(data: SaveData): string | null {
+  sanitiseNodes(data as unknown as AnySave);
   if (!data || typeof data !== 'object') return 'Save is not an object';
   if (typeof data.version !== 'number') return 'Missing version';
   if (data.version > SAVE_VERSION) return `Save is from a newer version (${data.version})`;
