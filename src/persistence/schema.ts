@@ -136,6 +136,7 @@ export interface SaveData {
   diplomacy: Record<string, unknown>;
   culture: Record<string, unknown>;
   history: Record<string, unknown>;
+  technology: Record<string, unknown>;
   disease: Record<string, unknown>;
   volcanoes: SavedVolcano[];
   economy: Record<string, unknown>;
@@ -213,6 +214,7 @@ export function migrate(raw: AnySave): SaveData {
     // same way a new world's are.
     data.culture = data.culture ?? {};
     data.history = data.history ?? {};
+    data.technology = data.technology ?? {};
     data.version = 6;
   }
 

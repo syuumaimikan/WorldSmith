@@ -296,7 +296,7 @@ export class DiplomacySystem {
 
         // A government goes to war when it thinks it will win, and thinks so
         // more readily the more ambitious and less careful its ruler is.
-        const balance = this.strengthOf(attacker) / Math.max(1, this.strengthOf(defender));
+        const balance = this.strengthOf(world, attacker) / Math.max(1, this.strengthOf(world, defender));
         const confidence =
           balance * (0.6 + attacker.leader.ambition * 0.8) * (1.4 - attacker.leader.competence * 0.4);
         if (confidence < 1.4) continue;
@@ -362,8 +362,19 @@ export class DiplomacySystem {
   }
 
   /** What a nation can actually bring to a fight. */
-  private strengthOf(nation: Nation): number {
-    return nation.army * (0.7 + nation.leader.competence * 0.6) * (0.5 + nation.stability * 0.5);
+  /**
+   * What a nation is worth in the field. Numbers, the ruler's judgement, how
+   * together the country is -- and what its soldiers are carrying, which over
+   * a few centuries comes to matter more than any of the rest.
+   */
+  private strengthOf(world: World, nation: Nation): number {
+    const era = world.technology.eraOf(world, nation).martial;
+    return (
+      nation.army *
+      (0.7 + nation.leader.competence * 0.6) *
+      (0.5 + nation.stability * 0.5) *
+      era
+    );
   }
 
   declareWar(world: World, attacker: Nation, defender: Nation, goal: WarGoal): War {

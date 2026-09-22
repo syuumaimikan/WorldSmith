@@ -55,6 +55,7 @@ export function preSimulate(
     world.nations.update(world, hours);
     world.diplomacy.update(world, hours);
     world.culture.update(world, hours);
+    world.technology.update(world, hours);
     world.tectonics.update(world, hours);
     world.history.update(world, hours);
 

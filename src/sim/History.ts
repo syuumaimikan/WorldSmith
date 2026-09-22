@@ -141,6 +141,8 @@ const KEY_WEIGHT: Record<string, number> = {
   'ev.famine': 0.8,
   'ev.famineEnds': 0.5,
   'ev.researchDone': 0.45,
+  'ev.eraReached': 0.8,
+  'ev.eraLost': 0.85,
   'ev.settlersArrive': 0.42,
   'event.eruption': 0.85,
   'event.meteor': 0.85,

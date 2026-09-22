@@ -456,7 +456,7 @@ export class NationSystem {
    * Borders creep. A nation with more people than its land supports pushes
    * outward; one that is falling apart lets the edges go.
    */
-  private adjustBorders(nation: Nation, days: number): void {
+  private adjustBorders(world: World, nation: Nation, days: number): void {
     // A faction in the field claims nothing. It is fighting for the country
     // it is already standing in.
     if (nation.rebelAgainst !== 0) return;
@@ -466,7 +466,7 @@ export class NationSystem {
       this.claimAround(nation, Math.max(2, Math.round(this.playerReach / this.cellSize)));
       return;
     }
-    const crowded = nation.population > this.carryingCapacity(nation) * 0.8;
+    const crowded = nation.population > this.carryingCapacity(world, nation) * 0.8;
     // Land is only lost by a state that is genuinely coming apart, and even
     // then slowly: borders move at the pace of a generation, not a season.
     // Land is only given up when there is more of it than there are people to
@@ -566,7 +566,7 @@ export class NationSystem {
       // overfull. Without the reversal a nation grows for ever on land that
       // cannot feed it, which is the commonest way a simulation like this
       // stops meaning anything.
-      const room = this.carryingCapacity(nation);
+      const room = this.carryingCapacity(world, nation);
       const crowding = nation.population / room;
       let rate = 0.0065 * (1 - crowding) * lawGrowth;
       // Unrest holds growth back, but it must not hold a decline back: a land
@@ -612,7 +612,7 @@ export class NationSystem {
       // Judged against the same carrying capacity that governs growth. Two
       // different ideas of how full the land is would leave a nation at once
       // exactly at capacity and permanently overcrowded.
-      const room = this.carryingCapacity(nation);
+      const room = this.carryingCapacity(world, nation);
       unrestDelta += clamp01(nation.population / room - 0.9) * 0.4;
     }
     for (const id of nation.laws) unrestDelta += LAWS[id].unrest;
@@ -669,7 +669,7 @@ export class NationSystem {
       }
     }
 
-    this.adjustBorders(nation, days);
+    this.adjustBorders(world, nation, days);
 
     // A polity reduced to a handful of people on one patch of ground is not a
     // polity any more. Rather than leave it twitching at zero for ever, it
@@ -702,7 +702,12 @@ export class NationSystem {
    * actual fertility of what it holds, so a kingdom of marsh and mountain is
    * poorer than one of the same size on good bottom land.
    */
-  private carryingCapacity(nation: Nation): number {
+  /**
+   * How many people this nation's land will feed. What a people know how to do
+   * with land is most of the answer: the same valley that supports a thousand
+   * with stone tools supports nearly twice that once they can work iron.
+   */
+  private carryingCapacity(world: World, nation: Nation): number {
     let quality = 0;
     const t = this.terrain;
     for (let i = 0; i < this.claims.length; i++) {
@@ -715,7 +720,7 @@ export class NationSystem {
       );
       quality += 0.35 + t.data.fertility[ti];
     }
-    return Math.max(24, quality * PEOPLE_PER_CELL);
+    return Math.max(24, quality * PEOPLE_PER_CELL * world.technology.eraOf(world, nation).carrying);
   }
 
   /**
@@ -803,9 +808,11 @@ export class NationSystem {
       // Real goods, really made: whatever the workshops turned out.
       return world.economy.dailyOutput();
     }
-    // Elsewhere, what the land and the people it supports would yield.
+    // Elsewhere, what the land and the people it supports would yield, for
+    // whatever they presently know how to do with either.
     const land = nation.territory;
-    return nation.population * 0.08 + land * 0.35;
+    const era = world.technology.eraOf(world, nation);
+    return (nation.population * 0.08 + land * 0.35) * era.production;
   }
 
   private lawProduct(nation: Nation, field: 'income' | 'growth' | 'levy'): number {

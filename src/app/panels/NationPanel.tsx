@@ -49,6 +49,7 @@ function UsTab({ game }: { game: Game }): JSX.Element {
   if (!nation) return <EmptyNote>—</EmptyNote>;
 
   const reignYears = Math.floor((world.time.totalDays - nation.leader.since) / DAYS_PER_YEAR);
+  const era = world.technology.eraOf(world, nation);
 
   return (
     <>
@@ -57,6 +58,7 @@ function UsTab({ game }: { game: Game }): JSX.Element {
       </div>
       <div className="stat-grid">
         <Reading label={t('nation.government')} value={t(`gov.${nation.government}`)} />
+        <Reading label={t('nation.era')} value={t(`era.${era.id}`)} />
         <Reading label={t('nation.population')} value={String(Math.round(nation.population))} />
         <Reading label={t('nation.territory')} value={String(nation.territory)} />
         <Reading label={t('nation.treasury')} value={Math.round(nation.treasury).toString()} />
@@ -66,6 +68,12 @@ function UsTab({ game }: { game: Game }): JSX.Element {
           value={String(nation.regimeChanges)}
         />
       </div>
+
+      <TraitBar
+        label={t('nation.knowledge')}
+        value={world.technology.progressOf(world, nation)}
+        good
+      />
 
       <div className="section-label">{t('nation.leader')}</div>
       <div style={{ marginBottom: 2 }}>{nation.leader.name}</div>
@@ -168,6 +176,7 @@ function WorldTab({ game }: { game: Game }): JSX.Element {
               <div className="tiny muted">
                 {t(`gov.${n.government}`)} · {n.leader.name}
               </div>
+              <div className="tiny muted">{t(`era.${world.technology.eraOf(world, n).id}`)}</div>
               <div className="tiny muted mono">
                 {Math.round(n.population)} · {n.territory} · {Math.round(n.army)}
               </div>
