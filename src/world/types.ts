@@ -104,7 +104,19 @@ export interface OreVein {
   x: number;
   z: number;
   radius: number;
-  kind: 'iron' | 'copper' | 'coal' | 'stone' | 'clay';
+  kind:
+    | 'iron'
+    | 'copper'
+    | 'tin'
+    | 'coal'
+    | 'stone'
+    | 'clay'
+    | 'gold'
+    | 'silver'
+    | 'salt'
+    | 'obsidian'
+    | 'limestone'
+    | 'flint';
   richness: number;
 }
 

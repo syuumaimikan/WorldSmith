@@ -23,6 +23,7 @@ import { NpcRenderer } from '../render/NpcRenderer';
 import { WildlifeRenderer } from '../render/WildlifeRenderer';
 import { ParticleSystem } from '../render/Particles';
 import { SkyfallRenderer } from '../render/SkyfallRenderer';
+import { LandmarkRenderer } from '../render/LandmarkRenderer';
 import { CharacterRig } from '../render/CharacterRig';
 import { characterMaterial, lookFor } from '../render/geometry/character';
 import { PALETTE } from '../render/Palette';
@@ -105,6 +106,7 @@ export class Game {
   readonly npcRenderer: NpcRenderer;
   readonly wildlifeRenderer: WildlifeRenderer;
   readonly particles: ParticleSystem;
+  readonly landmarks: LandmarkRenderer;
   readonly skyfall: SkyfallRenderer;
   readonly overlays: OverlayRenderer;
   readonly build: BuildController;
@@ -173,6 +175,8 @@ export class Game {
     const cold = world.config.climate === 'cold';
     this.terrainRenderer = new TerrainRenderer(world.terrain, this.scene, this.tint);
     this.vegetation = new VegetationRenderer(this.scene, world.terrain, season, cold);
+    this.landmarks = new LandmarkRenderer(this.scene);
+    this.landmarks.build(world.pois, world.terrain);
     this.buildingRenderer = new BuildingRenderer(this.scene, season);
     this.pileRenderer = new PileRenderer(this.scene);
     this.npcRenderer = new NpcRenderer(this.scene);

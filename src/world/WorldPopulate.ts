@@ -9,6 +9,7 @@
 import { Rng } from '../core/rng';
 import { Noise2D } from '../core/noise';
 import { clamp01, smoothstep } from '../core/math';
+import { GeologyField, ORE_IN_ROCK, readGeology, Rock } from './Geology';
 import { Biome, OreVein, PointOfInterest, TerrainData, WorldConfig } from './types';
 import {
   BIOME_FLORA,
@@ -61,7 +62,9 @@ export function populateWorld(
 
   // ------------------------------------------------------------- ore veins
   progress('Seeding mineral veins', 0);
-  const veins = placeVeins(config, terrain, waterHeight, rng);
+  // What the rock is, which decides what is in it and where the caves are.
+  const geology = readGeology(config, terrain, waterHeight);
+  const veins = placeVeins(config, terrain, waterHeight, rng, geology);
 
   // ------------------------------------------------------------ vegetation
   progress('Growing forests', 0);
@@ -134,30 +137,32 @@ export function populateWorld(
   progress('Placing mineral deposits', 0);
   for (const vein of veins) {
     const count = Math.round(6 + vein.richness * 14);
-    for (let k = 0; k < count; k++) {
-      const a = rng.range(0, Math.PI * 2);
-      const rr = Math.sqrt(rng.next()) * vein.radius;
-      const wx = vein.x + Math.cos(a) * rr;
-      const wz = vein.z + Math.sin(a) * rr;
-      const tx = Math.floor(wx / ts);
-      const tz = Math.floor(wz / ts);
-      if (tx < 1 || tz < 1 || tx >= N - 1 || tz >= N - 1) continue;
-      const i = tz * N + tx;
-      if (occupied[i]) continue;
-      if (waterHeight[i] > terrain.height[i] - 0.1) continue;
-      if (terrain.slope[i] > 0.8) continue;
-      const kind: ResourceKind =
-        vein.kind === 'iron'
-          ? 'iron_outcrop'
-          : vein.kind === 'copper'
-            ? 'copper_outcrop'
-            : vein.kind === 'coal'
-              ? 'coal_seam'
-              : vein.kind === 'clay'
-                ? 'clay_pit'
-                : 'boulder';
-      occupied[i] = 1;
-      nodes.push(makeNode(nextId++, kind, wx, wz, terrain.height[i], rng, rng.range(0.85, 1.25)));
+    let placed = 0;
+    // Two passes. The second one is allowed to stand an outcrop among the
+    // trees, because a seam of copper under a wood is still a seam of copper
+    // -- and without it a vein that happened to fall in dense forest produced
+    // nothing at all, which is how a whole world ended up with no copper in
+    // it and no way for the player to find out why.
+    for (let pass = 0; pass < 2 && placed === 0; pass++) {
+      const tries = pass === 0 ? count : count * 3;
+      for (let k = 0; k < tries && placed < count; k++) {
+        const a = rng.range(0, Math.PI * 2);
+        const rr = Math.sqrt(rng.next()) * vein.radius * (pass === 0 ? 1 : 1.6);
+        const wx = vein.x + Math.cos(a) * rr;
+        const wz = vein.z + Math.sin(a) * rr;
+        const tx = Math.floor(wx / ts);
+        const tz = Math.floor(wz / ts);
+        if (tx < 1 || tz < 1 || tx >= N - 1 || tz >= N - 1) continue;
+        const i = tz * N + tx;
+        if (pass === 0 && occupied[i]) continue;
+        if (waterHeight[i] > terrain.height[i] - 0.1) continue;
+        if (terrain.slope[i] > 0.8) continue;
+        occupied[i] = 1;
+        placed++;
+        nodes.push(
+          makeNode(nextId++, VEIN_NODE[vein.kind], wx, wz, terrain.height[i], rng, rng.range(0.85, 1.25)),
+        );
+      }
     }
   }
 
@@ -207,6 +212,22 @@ export function populateWorld(
   };
 }
 
+/** What an outcrop of each kind of vein looks like on the ground. */
+const VEIN_NODE: Record<OreVein['kind'], ResourceKind> = {
+  iron: 'iron_outcrop',
+  copper: 'copper_outcrop',
+  tin: 'tin_outcrop',
+  coal: 'coal_seam',
+  clay: 'clay_pit',
+  gold: 'gold_vein',
+  silver: 'silver_vein',
+  salt: 'salt_flat',
+  obsidian: 'obsidian_flow',
+  limestone: 'limestone_outcrop',
+  flint: 'flint_nodule',
+  stone: 'boulder',
+};
+
 function makeNode(
   id: number,
   kind: ResourceKind,
@@ -254,23 +275,28 @@ function makeNode(
 
 // -------------------------------------------------------------------------
 
+/**
+ * Where the deposits are.
+ *
+ * Not scattered: each one is in the rock that would actually hold it. The
+ * geology field already knows what every tile is made of and how much heat
+ * has been through it, so a vein is simply drawn from what that rock has in
+ * it. Copper and gold come up with the hot water over a slab, tin sits in
+ * granite, coal is a drowned swamp, salt is a dried-out basin -- and a
+ * settlement that wants tin has to go and find the old mountain roots rather
+ * than dig anywhere and hope.
+ */
 function placeVeins(
   config: WorldConfig,
   terrain: TerrainData,
   waterHeight: Float32Array,
   rng: Rng,
+  geology: GeologyField,
 ): OreVein[] {
   const N = terrain.gridSize;
   const ts = terrain.tileSize;
   const veins: OreVein[] = [];
   const target = Math.round((N * N) / 5200 * config.resourceDensity);
-
-  const wants: { kind: OreVein['kind']; weight: number; minH: number; maxH: number }[] = [
-    { kind: 'iron', weight: 30, minH: 12, maxH: 200 },
-    { kind: 'copper', weight: 22, minH: 8, maxH: 160 },
-    { kind: 'coal', weight: 26, minH: 5, maxH: 140 },
-    { kind: 'stone', weight: 22, minH: 3, maxH: 220 },
-  ];
 
   let attempts = 0;
   while (veins.length < target && attempts < target * 60) {
@@ -280,8 +306,17 @@ function placeVeins(
     const i = tz * N + tx;
     if (waterHeight[i] > terrain.height[i]) continue;
     const h = terrain.height[i];
-    const pick = rng.weighted(wants.map((w) => ({ value: w, weight: w.weight })));
-    if (h < pick.minH || h > pick.maxH) continue;
+    if (h < 2) continue;
+    const table = ORE_IN_ROCK[geology.rock[i] as Rock];
+    const pick = {
+      kind: rng.weighted(table.map((e) => ({ value: e.kind, weight: e.weight }))) as OreVein['kind'],
+    };
+    // Coal is a drowned swamp: flat, low and wet, and nowhere else.
+    if (pick.kind === 'coal' && (h > 60 || terrain.moisture[i] < 0.4)) continue;
+    // Salt is what an arid basin leaves behind.
+    if (pick.kind === 'salt' && (terrain.moisture[i] > 0.34 || h > 40)) continue;
+    // And the precious metals ride the heat.
+    if ((pick.kind === 'gold' || pick.kind === 'silver') && geology.volcanism[i] < 0.25) continue;
     // Ore favours rugged ground.
     if (terrain.slope[i] < 0.1 && !rng.chance(0.25)) continue;
 
@@ -303,6 +338,50 @@ function placeVeins(
       kind: pick.kind,
       richness: rng.range(0.4, 1),
     });
+  }
+
+  // Three metals the whole technological line runs through. A world without
+  // any copper in it is a world where bronze is unreachable and the player
+  // never finds out why, so if the rock did not happen to provide any, the
+  // best ground for it gets some. This is a floor, not a hand-out: it places
+  // two or three small veins in the most plausible place there is.
+  for (const needed of ['iron', 'copper', 'tin'] as OreVein['kind'][]) {
+    const want = veins.filter((v) => v.kind === needed).length > 0 ? 2 : 3;
+    if (veins.filter((v) => v.kind === needed).length >= want) continue;
+
+    // Two lists, tried in order. First the ground whose rock would actually
+    // hold this metal; then, only if that was not enough, the most broken
+    // high ground there is -- which is where somebody would go looking, and
+    // which keeps a world from being one where bronze is unreachable and the
+    // player never finds out why.
+    const preferred: { i: number; score: number }[] = [];
+    const anywhere: { i: number; score: number }[] = [];
+    for (let i2 = 0; i2 < N * N; i2 += 3) {
+      if (waterHeight[i2] > terrain.height[i2]) continue;
+      if (terrain.height[i2] < 4) continue;
+      // Rugged, but not so rugged that nothing can stand on it: an outcrop on
+      // a cliff face is an outcrop nobody can put a pick to.
+      if (terrain.slope[i2] > 0.6) continue;
+      anywhere.push({ i: i2, score: terrain.height[i2] * 0.4 + terrain.slope[i2] * 30 });
+      const entry = ORE_IN_ROCK[geology.rock[i2] as Rock].find((e) => e.kind === needed);
+      if (!entry) continue;
+      preferred.push({
+        i: i2,
+        score: entry.weight + terrain.slope[i2] * 12 + geology.volcanism[i2] * 8,
+      });
+    }
+    preferred.sort((a2, b2) => b2.score - a2.score);
+    anywhere.sort((a2, b2) => b2.score - a2.score);
+
+    for (const list of [preferred, anywhere]) {
+      for (const cand of list) {
+        if (veins.filter((v) => v.kind === needed).length >= want) break;
+        const x = (cand.i % N) * ts;
+        const z = Math.floor(cand.i / N) * ts;
+        if (veins.some((v) => Math.hypot(v.x - x, v.z - z) < 55)) continue;
+        veins.push({ x, z, radius: rng.range(9, 18), kind: needed, richness: rng.range(0.5, 1) });
+      }
+    }
   }
   return veins;
 }
