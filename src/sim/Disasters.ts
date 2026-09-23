@@ -283,7 +283,14 @@ export class DisasterManager {
    */
   maybeTsunami(world: World, x: number, z: number, magnitude: number): void {
     if (magnitude < 0.45) return;
-    const source = this.nearestOpenWater(world, x, z, 260);
+    // How far out the shock can reach water. Two hundred and sixty metres was
+    // a number from a much smaller map: on this world an epicentre in a
+    // coastal valley is a kilometre from the sea, so almost every quake the
+    // player deliberately set off on a beach quietly raised nothing. A real
+    // shock of this size displaces sea floor for tens of kilometres; the
+    // limit here is the size of the world, not the physics.
+    const search = Math.max(900, world.terrain.worldSize * 0.45);
+    const source = this.nearestOpenWater(world, x, z, search);
     if (!source) return;
 
     // How far the wave has to come decides how long the harbour has.
@@ -633,16 +640,23 @@ export class DisasterManager {
   /**
    * Calls something down on a place, from a long way up.
    *
-   * The rock enters high and off to one side, so it crosses the sky rather
-   * than dropping on the spot, and takes several seconds about it. Everything
-   * that happens on impact is unchanged -- this only puts the approach in
-   * front of the player, which is the part that was missing.
+   * Getting this seen was harder than making it happen. The rock used to
+   * enter four hundred metres out and a kilometre up, which is an entry angle
+   * of nearly sixty degrees: it came down almost vertically, out of a piece
+   * of sky above the top of the screen, and was gone. What a person actually
+   * sees of a fireball is a long shallow streak across the sky, so the rock
+   * now enters over a kilometre away and only a few hundred metres up, and it
+   * enters to one *side* of the line between the player and where it is
+   * going, so that it crosses the view instead of arriving down it.
    */
   callDownMeteor(world: World, x: number, z: number, size: number): FallingBody {
-    const flight = 6 + size * 4;
-    const angle = this.rng.range(0, Math.PI * 2);
-    const reach = 420 + size * 380;
-    const altitude = 620 + size * 540;
+    const flight = 9 + size * 5;
+    // Roughly across the player's view rather than into it or away from it.
+    const toPlayer = Math.atan2(world.player.position.z - z, world.player.position.x - x);
+    const side = this.rng.chance(0.5) ? 1 : -1;
+    const angle = toPlayer + side * this.rng.range(0.9, 2.2);
+    const reach = 1100 + size * 900;
+    const altitude = 260 + size * 300;
     const body: FallingBody = {
       id: this.nextBodyId++,
       x: x + Math.cos(angle) * reach,
@@ -673,7 +687,15 @@ export class DisasterManager {
     return body;
   }
 
-  /** Moves what is in the air, and lands it. */
+  /**
+   * Moves what is in the air, and lands it.
+   *
+   * `dt` here is wall-clock seconds, not world seconds. A meteor crossing the
+   * sky is something a person watches; if its flight were scaled by the speed
+   * control then at eight times it would enter and land inside a single frame
+   * and all the player would ever see is the crater it left. The world may
+   * run fast; the thing falling through it falls at the speed it falls.
+   */
   updateSkyfall(world: World, dt: number): void {
     if (this.falling.length === 0) return;
     for (let i = this.falling.length - 1; i >= 0; i--) {
@@ -727,7 +749,28 @@ export class DisasterManager {
       this.ignite(world, x + Math.cos(a) * r, z + Math.sin(a) * r, 0.9);
     }
 
-    world.log.add(world.time, 'disaster', 'event.meteor', undefined, { notable: true, x, z });
+    // What is left of the thing that fell.
+    //
+    // Meteoric iron was the only iron anybody had before smelting: the
+    // Egyptians called it "iron from the sky" and made daggers of it, and it
+    // is naturally alloyed with nickel, which is why those blades did not
+    // rust like bog iron did. So a crater is worth walking to -- not because
+    // a crater is a treasure chest, but because the rock survived the landing
+    // and it is better metal than the ground here has.
+    const shards = 2 + Math.round(size * 5);
+    for (let i = 0; i < shards; i++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      // Scattered around the rim, where ejecta actually ends up, rather than
+      // heaped in the middle where the rock is vapour.
+      const r = radius * this.rng.range(0.35, 1.25);
+      const sx = x + Math.cos(a) * r;
+      const sz = z + Math.sin(a) * r;
+      if (!world.terrain.inWorld(sx, sz)) continue;
+      if (world.terrain.waterDepthAt(sx, sz) > 0.3) continue;
+      world.spawnNode('meteoric_iron', sx, sz);
+    }
+
+    world.log.add(world.time, 'disaster', 'event.meteor', { shards }, { notable: true, x, z });
   }
 
   serialize(): Record<string, unknown> {

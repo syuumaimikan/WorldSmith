@@ -21,6 +21,7 @@ import {
   buildingStatus,
   carryingSummary,
 } from '../../i18n/names';
+import { Minimap } from './Minimap';
 
 export type PanelId =
   | 'none'
@@ -36,6 +37,7 @@ export type PanelId =
   | 'nation'
   | 'chronicle'
   | 'skip'
+  | 'store'
   | 'menu';
 
 interface Props {
@@ -118,7 +120,7 @@ export function Hud({
       {/* ------------------------------------------------------------- left */}
       <div className="hud-left">
         <div className="panel stat-bars">
-          <StatBar label={t('hud.health')} value={player.condition / 100} color={PALETTE.ui.bad} />
+          <StatBar label={t('hud.condition')} value={player.condition / 100} color={PALETTE.ui.bad} />
           <StatBar label={t('hud.stamina')} value={player.stats.stamina / 100} color={PALETTE.ui.good} />
           <StatBar label={t('hud.pack')} value={player.carriedWeightFraction()} color={PALETTE.ui.warn} />
         </div>
@@ -176,6 +178,7 @@ export function Hud({
 
       {/* ------------------------------------------------------------ right */}
       <div className="hud-right">
+        <Minimap game={game} onOpenMap={() => onOpenPanel('map')} />
         <div className="tool-buttons">
           <ToolButton label={t('hud.build')} hotkey="B" active={panel === 'build'} onClick={() => onOpenPanel('build')} />
           <ToolButton label={t('hud.inventory')} hotkey="Tab" active={panel === 'inventory'} onClick={() => onOpenPanel('inventory')} />

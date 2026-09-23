@@ -17,6 +17,8 @@ import { ChroniclePanel } from './panels/ChroniclePanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { PausePanel } from './panels/PausePanel';
 import { TimeSkipPanel } from './panels/TimeSkipPanel';
+import { StorePanel } from './panels/StorePanel';
+import { storeInReach } from '../game/PlayerActions';
 import { autosaveWorld, newSaveId, saveWorld } from '../persistence/saves';
 import { loadBindings } from '../persistence/settings';
 import { Action } from '../engine/Input';
@@ -43,6 +45,7 @@ const MODAL_PANELS: PanelId[] = [
   'nation',
   'chronicle',
   'skip',
+  'store',
   'menu',
 ];
 
@@ -77,6 +80,8 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
       // Copy so React sees a new object and re-renders.
       setHud({ ...snapshot });
     };
+
+    instance.onOpenPanel = (p) => setPanel(p as PanelId);
 
     instance.onAutosave = () => {
       void autosaveWorld(world, idRef.current).catch((e) => console.warn('Autosave failed', e));
@@ -246,6 +251,9 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
           {panel === 'nation' && <NationPanel game={game} onClose={closePanel} />}
           {panel === 'chronicle' && <ChroniclePanel game={game} onClose={closePanel} />}
           {panel === 'skip' && <TimeSkipPanel game={game} onClose={closePanel} />}
+          {panel === 'store' && storeInReach(game.world) && (
+            <StorePanel game={game} building={storeInReach(game.world)!} onClose={closePanel} />
+          )}
           {panel === 'menu' && (
             <PausePanel
               worldName={world.config.name}

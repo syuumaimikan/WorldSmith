@@ -4,7 +4,7 @@ import { ITEMS } from '../../data/items';
 import { ItemIcon, Window } from '../components/common';
 import { useT } from '../../i18n';
 import { itemDescription, itemName } from '../../i18n/names';
-import { equipSlot, swapSlots } from '../../game/PlayerActions';
+import { equipSlot, placeEquipped, swapSlots, throwEquipped, useEquipped } from '../../game/PlayerActions';
 
 interface Props {
   game: Game;
@@ -19,6 +19,10 @@ export function InventoryPanel({ game, onClose }: Props): JSX.Element {
   const [, forceRender] = useState(0);
 
   const player = game.world.player;
+  // What is in the hand right now. Eating was possible all along and there
+  // was no way to find out: the only route to it was a key nobody had been
+  // told about, on an item they had no way to select.
+  const held = player.equipped();
 
   const drop = (to: number): void => {
     if (dragFrom === null) return;
@@ -82,6 +86,49 @@ export function InventoryPanel({ game, onClose }: Props): JSX.Element {
           </button>
         ))}
       </div>
+
+      {held && (
+        <div className="inv-actions">
+          <span className="held-name">{itemName(held)}</span>
+          {(ITEMS[held].category === 'food' || held === 'herbs') && (
+            <button
+              className="mini primary"
+              onClick={() => {
+                const r = useEquipped(game.world);
+                if (r.message) game.toast(r.message);
+                forceRender((n) => n + 1);
+              }}
+            >
+              {ITEMS[held].category === 'food' ? t('act.eat') : t('act.use')}
+            </button>
+          )}
+          <button
+            className="mini"
+            onClick={() => {
+              const p = game.world.player;
+              const r = placeEquipped(
+                game.world,
+                p.position.x + Math.sin(p.yaw) * 1.3,
+                p.position.z + Math.cos(p.yaw) * 1.3,
+              );
+              if (r.message) game.toast(r.message);
+              forceRender((n) => n + 1);
+            }}
+          >
+            {t('act.drop')}
+          </button>
+          <button
+            className="mini"
+            onClick={() => {
+              const r = throwEquipped(game.world, 0.35);
+              if (r.message) game.toast(r.message);
+              forceRender((n) => n + 1);
+            }}
+          >
+            {t('act.throw')}
+          </button>
+        </div>
+      )}
 
       <div className="section-label">{t('inv.carried')}</div>
       <div className="list">

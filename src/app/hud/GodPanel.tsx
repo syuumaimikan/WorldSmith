@@ -39,8 +39,9 @@ export function GodPanel({ game, hud, onExit }: Props): JSX.Element {
 
   return (
     <>
-      {/* ------------------------------------------------------- tool palette */}
-      <div className="god-palette panel">
+      <div className="god-column">
+        {/* ----------------------------------------------------- tool palette */}
+        <div className="god-palette panel">
         <div className="god-head">
           <span>{t('god.title')}</span>
           <button className="btn small ghost" onClick={onExit}>
@@ -186,6 +187,7 @@ export function GodPanel({ game, hud, onExit }: Props): JSX.Element {
           <div>
             {t('god.power.volcano')}: <b>{world.volcanoes.length}</b>
           </div>
+        </div>
         </div>
       </div>
 

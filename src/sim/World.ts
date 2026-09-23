@@ -43,6 +43,7 @@ import { Settlement } from './Settlement';
 import { Economy } from './Economy';
 import { Animal, ANIMALS, AnimalSpecies, createAnimal, speciesForBiome } from './Wildlife';
 import { ItemPile, createPile } from './ItemPile';
+import { stepThrown, throwImpact, throwSpeed, ThrownItem } from './Throwing';
 import { updateNpc } from './systems/NpcAI';
 import { updateAnimals } from './systems/WildlifeAI';
 import { TerrainEditor } from '../world/TerrainEdit';
@@ -105,6 +106,9 @@ export class World {
   readonly piles: ItemPile[] = [];
   readonly pileById = new Map<number, ItemPile>();
   readonly pileGrid = new SpatialGrid<ItemPile>(10);
+
+  /** Things somebody has thrown and that have not landed yet. */
+  readonly thrown: ThrownItem[] = [];
 
   readonly buildings: Building[] = [];
   readonly buildingById = new Map<number, Building>();
@@ -819,6 +823,44 @@ export class World {
     return result;
   }
 
+  /**
+   * Puts a resource node on the ground, wherever it is told to.
+   *
+   * The unchecked version of `plantSapling`: used by things that have already
+   * decided a node belongs somewhere -- ejecta round a crater, ore exposed by
+   * a landslide -- and should not be second-guessed by a crowding rule meant
+   * for forestry.
+   */
+  spawnNode(kind: ResourceKind, x: number, z: number): ResourceNode | null {
+    const tx = this.terrain.tileX(x);
+    const tz = this.terrain.tileZ(z);
+    if (!this.terrain.inBounds(tx, tz)) return null;
+    if (this.terrain.isWaterTile(tx, tz)) return null;
+    if (this.buildingAtTile.has(this.terrain.index(tx, tz))) return null;
+
+    const def = RESOURCES[kind];
+    const node: ResourceNode = {
+      id: this.nextId(),
+      kind,
+      x,
+      z,
+      y: this.terrain.heightAt(x, z),
+      rot: this.rng.range(0, Math.PI * 2),
+      scale: 0.9 + this.rng.next() * 0.35,
+      variant: this.rng.int(0, 3),
+      amount: def.units,
+      maxAmount: def.units,
+      growth: 1,
+      age: 0,
+      regrowIn: -1,
+      reservedBy: 0,
+      work: 0,
+      depleted: false,
+    };
+    this.addNode(node);
+    return node;
+  }
+
   /** Plants a sapling, used by foresters and natural regrowth. */
   plantSapling(kind: ResourceKind, x: number, z: number): ResourceNode | null {
     const tx = this.terrain.tileX(x);
@@ -860,6 +902,84 @@ export class World {
   // =======================================================================
   // Ground piles
   // =======================================================================
+
+  /**
+   * Puts one of something into the air along a heading.
+   *
+   * `yaw` is the compass direction and `pitch` the elevation, both radians,
+   * which is exactly what the camera already has -- so you throw where you
+   * are looking.
+   */
+  throwItem(
+    item: ItemId,
+    count: number,
+    from: { x: number; y: number; z: number },
+    yaw: number,
+    pitch: number,
+    thrownBy = 0,
+  ): ThrownItem {
+    const speed = throwSpeed(item);
+    const horizontal = Math.cos(pitch) * speed;
+    const t: ThrownItem = {
+      id: this.nextId(),
+      item,
+      count,
+      x: from.x,
+      y: from.y,
+      z: from.z,
+      vx: Math.sin(yaw) * horizontal,
+      vy: Math.sin(pitch) * speed,
+      vz: Math.cos(yaw) * horizontal,
+      spin: 0,
+      thrownBy,
+      age: 0,
+      done: false,
+    };
+    this.thrown.push(t);
+    return t;
+  }
+
+  /** Moves everything in the air and lands what has come down. */
+  private updateThrown(dt: number): void {
+    if (this.thrown.length === 0) return;
+    const ground = (x: number, z: number): number => this.terrain.heightAt(x, z);
+
+    for (let i = this.thrown.length - 1; i >= 0; i--) {
+      const t = this.thrown[i];
+      const before = { x: t.x, y: t.y, z: t.z };
+      const rest = stepThrown(t, dt, ground);
+
+      // What it passed through on the way. Checked after the step so a throw
+      // that starts inside somebody's own body does not hit them.
+      if (!t.done && t.age > 0.08) {
+        const speed = Math.hypot(t.vx, t.vy, t.vz);
+        const midX = (before.x + t.x) / 2;
+        const midZ = (before.z + t.z) / 2;
+        let struck = false;
+        this.npcGrid.forEachNear(midX, midZ, 1.1, (npc) => {
+          if (struck || npc.id === t.thrownBy) return;
+          if (Math.abs(npc.y + 0.9 - t.y) > 1.1) return;
+          struck = true;
+          const harm = throwImpact(t.item, speed);
+          if (harm > 0.04) {
+            npc.body.hurtPart('torso', 'bruise', harm);
+            npc.adjustRelationship(0, -14);
+          }
+          this.startleNpc(npc, t.x, t.z);
+          t.done = true;
+        });
+        if (t.done) {
+          this.thrown.splice(i, 1);
+          this.dropPile(t.item, t.count, t.x, t.z);
+          continue;
+        }
+      }
+
+      if (!rest) continue;
+      this.thrown.splice(i, 1);
+      this.dropPile(t.item, t.count, rest.x, rest.z);
+    }
+  }
 
   dropPile(item: ItemId, count: number, x: number, z: number): ItemPile | null {
     if (count <= 0) return null;
@@ -1863,8 +1983,14 @@ export class World {
     // burning forest is genuinely racing the rain.
     this.disasters.updateFires(this, dt);
     this.disasters.updateFloods(this, dt);
-    this.disasters.updateSkyfall(this, dt);
+    // Whatever is in the air crosses the sky at the speed it crosses the
+    // sky. `simulate` is called once per world tick, so dividing by the
+    // speed makes the sum over a frame equal real elapsed time -- at eight
+    // times the world races and the fireball still takes its ten seconds.
+    this.disasters.updateSkyfall(this, dt / Math.max(1, this.time.speed as number));
     this.disasters.updateWaves(this, dt);
+    // Same wall-clock reasoning as the skyfall above.
+    this.updateThrown(dt / Math.max(1, this.time.speed as number));
     this.karst.update(this, hours / 24);
     updateVolcanoes(this, dt);
 

@@ -4,7 +4,7 @@ import { Window } from '../components/common';
 import { Biome } from '../../world/types';
 import { OVERLAY } from '../../world/Terrain';
 import { hexToCss, PALETTE, mixHex, shade } from '../../render/Palette';
-import { clamp01 } from '../../core/math';
+import { clamp, clamp01 } from '../../core/math';
 import { tierOf } from '../../sim/Nations';
 import { useT } from '../../i18n';
 import { biomeName } from '../../i18n/names';
@@ -101,12 +101,39 @@ const BIOME_COLOURS: Record<Biome, number> = {
   [Biome.Alpine]: PALETTE.terrain.snow,
 };
 
+/** How far in the map will go. Eight times is about one tile per pixel. */
+const MAX_ZOOM = 8;
+
 export function MapPanel({ game, onClose }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const t = useT();
   const [mode, setMode] = useState<MapMode>('terrain');
   const [hover, setHover] = useState<string>('');
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(
+    null,
+  );
   const world = game.world;
+
+  // Keeps the visible window inside the map however far it is zoomed, so you
+  // cannot drag the world off the edge of its own frame.
+  const clampPan = (px: number, py: number, z: number): { x: number; y: number } => {
+    const limit = MAP_SIZE * (z - 1);
+    return { x: clamp(px, 0, Math.max(0, limit)), y: clamp(py, 0, Math.max(0, limit)) };
+  };
+
+  const zoomBy = (factor: number, originX: number, originY: number): void => {
+    setZoom((z) => {
+      const next = clamp(z * factor, 1, MAX_ZOOM);
+      // Zoom about the cursor, so the thing you are pointing at stays put.
+      setPan((p) => {
+        const k = next / z;
+        return clampPan((p.x + originX) * k - originX, (p.y + originY) * k - originY, next);
+      });
+      return next;
+    });
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -235,14 +262,25 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
     ctx.putImageData(img, 0, 0);
   }, [mode, world]);
 
-  const toWorld = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; z: number } => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const fx = (e.clientX - rect.left) / rect.width;
-    const fz = (e.clientY - rect.top) / rect.height;
-    return { x: fx * world.terrain.worldSize, z: fz * world.terrain.worldSize };
+  /**
+   * Screen point to world metres.
+   *
+   * The rectangle is the viewport, not the map: the map inside it is `zoom`
+   * times bigger and scrolled by `pan`, and a reading taken without undoing
+   * that is a reading of the wrong place.
+   */
+  const toWorld = (e: { clientX: number; clientY: number }, rect: DOMRect): { x: number; z: number } => {
+    const sx = e.clientX - rect.left + pan.x;
+    const sy = e.clientY - rect.top + pan.y;
+    const size = MAP_SIZE * zoom;
+    return { x: (sx / size) * world.terrain.worldSize, z: (sy / size) * world.terrain.worldSize };
   };
 
   const scale = MAP_SIZE / world.terrain.worldSize;
+  const view = game.viewPoint;
+  // Only worth drawing when it is somewhere other than on top of the player.
+  const viewAway =
+    Math.hypot(view.x - world.player.position.x, view.z - world.player.position.z) > 12;
 
   return (
     <Window title={t('map.title')} onClose={onClose} width="normal">
@@ -255,28 +293,70 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
       </div>
 
       <div className="map-wrap">
-        <div style={{ position: 'relative', width: MAP_SIZE, height: MAP_SIZE }}>
+        <div
+          className="map-viewport"
+          style={{ position: 'relative', width: MAP_SIZE, height: MAP_SIZE, overflow: 'hidden' }}
+          onWheel={(e) => {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            zoomBy(e.deltaY < 0 ? 1.22 : 1 / 1.22, e.clientX - rect.left, e.clientY - rect.top);
+          }}
+          onMouseDown={(e) => {
+            dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, moved: false };
+          }}
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const drag = dragRef.current;
+            if (drag) {
+              const dx = e.clientX - drag.x;
+              const dy = e.clientY - drag.y;
+              if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+              if (drag.moved) setPan(clampPan(drag.panX - dx, drag.panY - dy, zoom));
+              return;
+            }
+            const w = toWorld(e, rect);
+            if (!world.terrain.inWorld(w.x, w.z)) {
+              setHover('');
+              return;
+            }
+            const biome = world.terrain.biomeAt(w.x, w.z);
+            const tx = world.terrain.tileX(w.x);
+            const tz = world.terrain.tileZ(w.z);
+            const known = world.explored[world.terrain.index(tx, tz)] === 1;
+            setHover(readout(world, mode, w.x, w.z, biome, known, t));
+          }}
+          onMouseUp={(e) => {
+            const drag = dragRef.current;
+            dragRef.current = null;
+            // A drag moved the map; only a click without one travels.
+            if (!drag || drag.moved) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const w = toWorld(e, rect);
+            if (!world.terrain.inWorld(w.x, w.z)) return;
+            const tx = world.terrain.tileX(w.x);
+            const tz = world.terrain.tileZ(w.z);
+            if (world.explored[world.terrain.index(tx, tz)] !== 1) return;
+            game.focusOn(w.x, w.z);
+            onClose();
+          }}
+          onMouseLeave={() => {
+            dragRef.current = null;
+            setHover('');
+          }}
+        >
+        <div
+          style={{
+            position: 'absolute',
+            width: MAP_SIZE,
+            height: MAP_SIZE,
+            transformOrigin: '0 0',
+            transform: `translate(${-pan.x}px, ${-pan.y}px) scale(${zoom})`,
+          }}
+        >
           <canvas
             ref={canvasRef}
             className="map-canvas"
-            style={{ width: MAP_SIZE, height: MAP_SIZE }}
-            onMouseMove={(e) => {
-              const w = toWorld(e);
-              const biome = world.terrain.biomeAt(w.x, w.z);
-              const tx = world.terrain.tileX(w.x);
-              const tz = world.terrain.tileZ(w.z);
-              const known = world.explored[world.terrain.index(tx, tz)] === 1;
-              setHover(readout(world, mode, w.x, w.z, biome, known, t));
-            }}
-            onMouseLeave={() => setHover('')}
-            onClick={(e) => {
-              const w = toWorld(e);
-              const tx = world.terrain.tileX(w.x);
-              const tz = world.terrain.tileZ(w.z);
-              if (world.explored[world.terrain.index(tx, tz)] !== 1) return;
-              game.focusOn(w.x, w.z);
-              onClose();
-            }}
+            style={{ width: MAP_SIZE, height: MAP_SIZE, pointerEvents: 'none' }}
           />
 
           {/* Landmarks and settlement markers sit above the canvas. */}
@@ -361,13 +441,48 @@ export function MapPanel({ game, onClose }: Props): JSX.Element {
             <circle
               cx={world.player.position.x * scale}
               cy={world.player.position.z * scale}
-              r={4}
+              r={4 / zoom}
               fill={hexToCss(PALETTE.cloak.player)}
               stroke="#fff"
-              strokeWidth={1.2}
+              strokeWidth={1.2 / zoom}
             />
+            {/* Where the eye actually is. In god mode the camera leaves the
+                body behind, and marking only the body made the map look like
+                it was of a smaller world than the one you were flying over. */}
+            {viewAway && (
+              <g>
+                <circle
+                  cx={view.x * scale}
+                  cy={view.z * scale}
+                  r={5 / zoom}
+                  fill="none"
+                  stroke="#e8e8ec"
+                  strokeWidth={1.4 / zoom}
+                />
+                <line
+                  x1={view.x * scale}
+                  y1={view.z * scale}
+                  x2={(view.x - Math.sin(game.viewYaw) * 26) * scale}
+                  y2={(view.z - Math.cos(game.viewYaw) * 26) * scale}
+                  stroke="#e8e8ec"
+                  strokeWidth={1.4 / zoom}
+                />
+              </g>
+            )}
           </svg>
         </div>
+        </div>
+      </div>
+
+      <div className="map-zoom">
+        <button className="mini" onClick={() => zoomBy(1 / 1.5, MAP_SIZE / 2, MAP_SIZE / 2)}>
+          &minus;
+        </button>
+        <span className="mono tiny">{zoom.toFixed(1)}&times;</span>
+        <button className="mini" onClick={() => zoomBy(1.5, MAP_SIZE / 2, MAP_SIZE / 2)}>
+          +
+        </button>
+        <span className="tiny muted">{t('map.scaleNote', { km: (world.terrain.worldSize / 1000).toFixed(1) })}</span>
       </div>
 
       <div className="map-legend">

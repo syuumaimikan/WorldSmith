@@ -32,6 +32,7 @@ export type ItemId =
   | 'silver_ore'
   | 'salt'
   | 'obsidian'
+  | 'meteoric_iron'
   | 'limestone'
   | 'flint'
   // processed
@@ -570,6 +571,19 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     value: 12,
     color: 0xeef0f2,
     description: 'Keeps meat through a winter, which is worth more than it sounds.',
+  }),
+  meteoric_iron: def({
+    id: 'meteoric_iron',
+    name: 'Sky-iron',
+    category: 'raw',
+    stackSize: 8,
+    weight: 18,
+    value: 120,
+    color: 0x6b6f78,
+    description:
+      'Iron that fell already made, alloyed with nickel by whatever it was '
+      + 'before. It does not rust, and it was the only iron anyone had until '
+      + 'somebody worked out how to get it out of rock.',
   }),
   obsidian: def({
     id: 'obsidian',

@@ -71,6 +71,7 @@ export const VARIANT_COUNT: Record<ResourceKind, number> = {
   silver_vein: 1,
   salt_flat: 1,
   obsidian_flow: 2,
+  meteoric_iron: 2,
   limestone_outcrop: 2,
   flint_nodule: 2,
   clay_pit: 1,
@@ -257,6 +258,11 @@ export function buildFloraGeometry(
       break;
     case 'obsidian_flow':
       buildGlassyRock(b, rng, lod, sc);
+      break;
+    case 'meteoric_iron':
+      // A lump that arrived at speed: pitted, dark, and half buried in the
+      // ground it hit.
+      buildOre(b, rng, lod, sc, 0x7d818b);
       break;
     case 'limestone_outcrop':
       buildPaleRock(b, rng, lod, sc);

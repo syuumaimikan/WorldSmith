@@ -19,6 +19,7 @@ import { TerrainRenderer } from '../render/TerrainRenderer';
 import { VegetationRenderer } from '../render/VegetationRenderer';
 import { BuildingRenderer } from '../render/BuildingRenderer';
 import { PileRenderer } from '../render/PileRenderer';
+import { ThrownRenderer } from '../render/ThrownRenderer';
 import { NpcRenderer } from '../render/NpcRenderer';
 import { WildlifeRenderer } from '../render/WildlifeRenderer';
 import { ParticleSystem } from '../render/Particles';
@@ -33,7 +34,17 @@ import { World } from '../sim/World';
 import { GameSpeed } from '../sim/Time';
 import { clamp } from '../core/math';
 import { BuildController, PlacementState } from './BuildController';
-import { InteractTarget, applyToolWork, equipSlot, findTarget, interact, placeEquipped, useEquipped } from './PlayerActions';
+import {
+  InteractTarget,
+  applyToolWork,
+  equipSlot,
+  findTarget,
+  interact,
+  placeEquipped,
+  storeInReach,
+  throwEquipped,
+  useEquipped,
+} from './PlayerActions';
 import { BuildingId } from '../data/buildings';
 import { Overlay, OverlayRenderer } from '../render/OverlayRenderer';
 import { AudioEngine } from '../audio/AudioEngine';
@@ -104,6 +115,7 @@ export class Game {
   readonly vegetation: VegetationRenderer;
   readonly buildingRenderer: BuildingRenderer;
   readonly pileRenderer: PileRenderer;
+  readonly thrownRenderer: ThrownRenderer;
   readonly npcRenderer: NpcRenderer;
   readonly wildlifeRenderer: WildlifeRenderer;
   readonly particles: ParticleSystem;
@@ -127,6 +139,8 @@ export class Game {
   readonly hud: HudSnapshot;
   onHud: ((snapshot: HudSnapshot) => void) | null = null;
   onAutosave: (() => void) | null = null;
+  /** Asks the interface to open a panel, for actions in the world that have one. */
+  onOpenPanel: ((panel: string) => void) | null = null;
 
   private playerRig: CharacterRig;
   private charMaterial = characterMaterial();
@@ -187,6 +201,7 @@ export class Game {
     world.onLandmarksChanged = () => this.landmarks.build(world.pois, world.terrain);
     this.buildingRenderer = new BuildingRenderer(this.scene, season);
     this.pileRenderer = new PileRenderer(this.scene);
+    this.thrownRenderer = new ThrownRenderer(this.scene);
     this.npcRenderer = new NpcRenderer(this.scene);
     this.wildlifeRenderer = new WildlifeRenderer(this.scene);
     this.particles = new ParticleSystem(this.scene);
@@ -288,8 +303,13 @@ export class Game {
 
     const speed = this.world.time.speed as number;
     this.simAccumulator += dt * speed;
+    // The ceiling has to rise with the speed, or the speed is a lie. At eight
+    // times, a frame owes the world eight times as many ticks, and a fixed
+    // ceiling of ten quietly threw the rest away -- so the clock crawled, the
+    // meteor hung in the air, and the number in the corner said 8.
+    const budget = Math.max(MAX_TICKS_PER_FRAME, Math.ceil(speed * 6));
     let ticks = 0;
-    while (this.simAccumulator >= SIM_TICK && ticks < MAX_TICKS_PER_FRAME) {
+    while (this.simAccumulator >= SIM_TICK && ticks < budget) {
       this.simAccumulator -= SIM_TICK;
       ticks++;
       this.world.simulate(SIM_TICK);
@@ -415,6 +435,11 @@ export class Game {
         if (result.message) this.toast(result.message);
         if (result.kind === 'picked_up') this.audio.play('pickup');
         if (result.kind === 'stored') this.audio.play('store');
+        // Standing at a finished storehouse opens its door: what went in can
+        // now come out again, which it never could before.
+        if (result.kind === 'stored' || result.kind === 'selected') {
+          if (storeInReach(this.world)) this.onOpenPanel?.('store');
+        }
       }
 
       if (input.isDown('useTool') && this.currentTarget.kind === 'node' && this.currentTarget.node) {
@@ -443,6 +468,13 @@ export class Game {
         const r = useEquipped(this.world);
         if (r.message) this.toast(r.message);
         if (r.kind === 'used') this.audio.play('pickup');
+      }
+      if (input.keyPressed('KeyT')) {
+        // Thrown where the camera is pointed, at a slight lift, which is how
+        // a person throws when they are not aiming at their own feet.
+        const r = throwEquipped(this.world, this.cameras.pitch * -1 + 0.18);
+        if (r.message) this.toast(r.message);
+        if (r.kind === 'thrown') this.audio.play('pickup');
       }
       if (input.keyPressed('KeyG')) {
         // A pace in front of them, which is where a person puts things down.
@@ -712,6 +744,29 @@ export class Game {
     this.vegetation.markDirty();
   }
 
+  /**
+   * Where the eye is over the ground.
+   *
+   * In god mode the camera leaves the body behind, and the map went on
+   * drawing the body: you could fly to the far corner of the world and the
+   * marker never moved, which made the map look like it was of a different
+   * and smaller world. This is the point the map should actually mark.
+   */
+  get viewPoint(): { x: number; z: number } {
+    if (this.cameras.mode === 'god') {
+      const c = this.cameras.camera.position;
+      return { x: c.x, z: c.z };
+    }
+    const p = this.world.player.position;
+    const pan = this.cameras.panned;
+    return { x: p.x + pan.x, z: p.z + pan.z };
+  }
+
+  /** Which way the eye is facing, radians, for the map's view cone. */
+  get viewYaw(): number {
+    return this.cameras.yaw;
+  }
+
   toast(message: string): void {
     this.toastText = message;
     this.toastTimer = 2.6;
@@ -793,6 +848,7 @@ export class Game {
     const nightFactor = 1 - this.sky.daylight;
     this.buildingRenderer.update(world, camPos, nightFactor);
     this.pileRenderer.update(world.piles, camPos);
+    this.thrownRenderer.update(world.thrown);
     this.npcRenderer.setHidden(this.god.possessed);
     this.npcRenderer.update(world.npcs, camPos, dt);
     this.wildlifeRenderer.update(world.wildlife, camPos, dt);
@@ -1008,6 +1064,7 @@ export class Game {
     this.wildlifeRenderer.dispose();
     this.npcRenderer.dispose();
     this.pileRenderer.dispose();
+    this.thrownRenderer.dispose();
     this.buildingRenderer.dispose();
     this.vegetation.dispose();
     this.terrainRenderer.dispose();

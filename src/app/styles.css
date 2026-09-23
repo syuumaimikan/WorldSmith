@@ -47,6 +47,21 @@ body,
   font-family: var(--sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+
+  /* Nothing in a game interface is meant to be selected. Dragging across a
+     panel used to leave half the HUD highlighted in blue, and dragging out of
+     one onto the world started a selection that followed the camera. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Except the places where selecting text is the point. */
+input,
+textarea,
+[contenteditable='true'],
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 button {
@@ -1302,17 +1317,33 @@ button {
 
 /* ------------------------------------------------------------- god mode */
 
-.god-palette {
+/* The god-mode furniture is one column down the left. The palette and the
+   readout used to be two absolutely positioned panels on opposite sides of
+   the screen, and the readout sat on top of whatever the world inspector was
+   showing in the bottom-right corner. */
+.god-column {
   position: absolute;
   left: 14px;
   top: 50%;
   transform: translateY(-50%);
   width: 226px;
-  padding: 12px;
-  max-height: 78vh;
-  overflow-y: auto;
-  pointer-events: auto;
+  max-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
   z-index: 15;
+}
+
+.god-column > * {
+  pointer-events: auto;
+}
+
+.god-palette {
+  width: 100%;
+  padding: 12px;
+  max-height: 52vh;
+  overflow-y: auto;
 }
 
 .god-head {
@@ -1386,14 +1417,10 @@ button {
 }
 
 .god-inspector {
-  position: absolute;
-  right: 200px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 214px;
+  width: 100%;
   padding: 12px;
-  pointer-events: auto;
-  z-index: 15;
+  max-height: 34vh;
+  overflow-y: auto;
 }
 
 .god-timeline {
@@ -1528,4 +1555,129 @@ button {
   right: 0;
   height: 3px;
   border-radius: 2px;
+}
+
+/* ------------------------------------------------------------- inventory
+   The row of things you can do with what is in your hand. It only appears
+   when something is in it, so it never takes space from the grid. */
+.inv-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inv-actions .held-name {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.mini {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+button.mini:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+button.mini.primary {
+  border-color: rgba(126, 196, 138, 0.5);
+  background: rgba(126, 196, 138, 0.18);
+}
+
+/* ---------------------------------------------------------------- stores
+   Two columns, yours and theirs, so a transfer is one click and it is
+   obvious which way it went. */
+.store-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+@media (max-width: 720px) {
+  .store-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --------------------------------------------------------------- minimap
+   A window on the ground you are standing on, north-up. Drawn from the same
+   terrain as the full map so the two can never disagree about where you are. */
+.minimap {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #0e1014;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.minimap canvas {
+  display: block;
+  width: 168px;
+  height: 168px;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+
+.minimap-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.minimap-zoom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 2px 0;
+  background: linear-gradient(to top, rgba(8, 10, 14, 0.88), rgba(8, 10, 14, 0));
+}
+
+.minimap-zoom .mini {
+  padding: 0 7px;
+  line-height: 18px;
+}
+
+.minimap-zoom .mini:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------- world map */
+.map-viewport {
+  border-radius: 6px;
+  cursor: grab;
+}
+
+.map-viewport:active {
+  cursor: grabbing;
+}
+
+.map-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }

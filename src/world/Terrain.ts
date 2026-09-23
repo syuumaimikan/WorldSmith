@@ -73,6 +73,11 @@ export class Terrain {
     return tz * this.tileSize;
   }
 
+  /** Whether a point in metres is inside the world at all. */
+  inWorld(x: number, z: number): boolean {
+    return x >= 0 && z >= 0 && x <= this.worldSize && z <= this.worldSize;
+  }
+
   /** Centre of the world in metres, handy for camera defaults. */
   get centre(): [number, number] {
     return [this.worldSize / 2, this.worldSize / 2];

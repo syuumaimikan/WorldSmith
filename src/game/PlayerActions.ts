@@ -162,7 +162,17 @@ export function findTarget(world: World): InteractTarget {
 }
 
 export interface ActionResult {
-  kind: 'none' | 'gathered' | 'picked_up' | 'stored' | 'selected' | 'talked' | 'full' | 'used' | 'placed';
+  kind:
+    | 'none'
+    | 'gathered'
+    | 'picked_up'
+    | 'stored'
+    | 'selected'
+    | 'talked'
+    | 'full'
+    | 'used'
+    | 'placed'
+    | 'thrown';
   message?: string;
   /** Position for particle effects. */
   x?: number;
@@ -475,4 +485,106 @@ export function placeEquipped(world: World, x: number, z: number): ActionResult 
     z,
     effect: 'dust',
   };
+}
+
+// --------------------------------------------------------------- throwing
+
+/** How far from a storehouse you can still reach into it. */
+export const STORE_REACH = 4.5;
+
+/**
+ * Throws one of the held thing where the player is looking.
+ *
+ * It leaves the hand at a speed the item's own weight decides, follows a real
+ * arc, and is the same item when it lands -- so a thrown stone can be picked
+ * up again, and a thrown stone that hits somebody hurts them and is
+ * remembered by them.
+ */
+export function throwEquipped(world: World, pitch: number): ActionResult {
+  const p = world.player;
+  const item = p.equipped();
+  if (!item) return { kind: 'none', message: t('act.nothingHeld') };
+  if (ITEMS[item].weight > 30) {
+    return { kind: 'none', message: t('act.tooHeavyToThrow', { item: itemName(item) }) };
+  }
+  if (p.inventory.remove(item, 1) <= 0) return { kind: 'none' };
+  if (p.inventory.count(item) === 0) p.equippedSlot = -1;
+
+  // From the hand, not from the feet, and a little in front so it does not
+  // start inside the character.
+  const from = {
+    x: p.position.x + Math.sin(p.yaw) * 0.5,
+    y: p.position.y + 1.45,
+    z: p.position.z + Math.cos(p.yaw) * 0.5,
+  };
+  world.throwItem(item, 1, from, p.yaw, pitch, 0);
+  return {
+    kind: 'thrown',
+    message: t('act.threw', { item: itemName(item) }),
+    x: from.x,
+    y: from.y,
+    z: from.z,
+  };
+}
+
+// --------------------------------------------------------------- storehouses
+
+/**
+ * The storehouse the player is standing at, if any.
+ *
+ * Reaching into a store you are nowhere near would be exactly the teleporting
+ * logistics this game refuses everywhere else, so the panel that shows the
+ * contents is only usable while you are actually at the door.
+ */
+export function storeInReach(world: World): Building | null {
+  const p = world.player;
+  let best: Building | null = null;
+  let bestD = STORE_REACH;
+  for (const b of world.buildings) {
+    if (!b.complete) continue;
+    if ((b.def.storageSlots ?? 0) <= 0) continue;
+    const d = Math.hypot(b.worldX - p.position.x, b.worldZ - p.position.z);
+    if (d >= bestD) continue;
+    bestD = d;
+    best = b;
+  }
+  return best;
+}
+
+/** Takes goods out of a store and into the pack. */
+export function takeFromStore(
+  world: World,
+  building: Building,
+  item: ItemId,
+  count: number,
+): ActionResult {
+  const p = world.player;
+  if (Math.hypot(building.worldX - p.position.x, building.worldZ - p.position.z) > STORE_REACH) {
+    return { kind: 'none', message: t('act.tooFarFromStore') };
+  }
+  const want = Math.min(count, building.inventory.count(item), p.inventory.spaceFor(item));
+  if (want <= 0) return { kind: 'full', message: t('inv.full') };
+  const moved = building.inventory.transferTo(p.inventory, item, want);
+  if (moved <= 0) return { kind: 'none' };
+  return {
+    kind: 'picked_up',
+    message: t('inv.tookOut', { count: moved, item: itemName(item) }),
+  };
+}
+
+/** Puts goods from the pack into a store. */
+export function putIntoStore(
+  world: World,
+  building: Building,
+  item: ItemId,
+  count: number,
+): ActionResult {
+  const p = world.player;
+  if (Math.hypot(building.worldX - p.position.x, building.worldZ - p.position.z) > STORE_REACH) {
+    return { kind: 'none', message: t('act.tooFarFromStore') };
+  }
+  const moved = p.inventory.transferTo(building.inventory, item, count);
+  if (moved <= 0) return { kind: 'full', message: t('prod.idleReason.storeFull') };
+  if (p.inventory.count(item) === 0 && p.equipped() === item) p.equippedSlot = -1;
+  return { kind: 'stored', message: t('inv.stored', { count: moved }) };
 }

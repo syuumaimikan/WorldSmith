@@ -65,7 +65,8 @@ export type ResourceKind =
   | 'limestone_outcrop'
   | 'flint_nodule'
   | 'clay_pit'
-  | 'sand_pit';
+  | 'sand_pit'
+  | 'meteoric_iron';
 
 export type ResourceCategory = 'tree' | 'plant' | 'mineral';
 export type HarvestSkill = 'chop' | 'mine' | 'forage';
@@ -781,6 +782,19 @@ export const RESOURCES: Record<ResourceKind, ResourceDef> = {
     regrowDays: 90,
     radius: 1.6,
     blocks: false,
+    spreads: false,
+  }),
+  meteoric_iron: r({
+    kind: 'meteoric_iron',
+    name: 'Sky-iron',
+    category: 'mineral',
+    skill: 'mine',
+    yields: [{ item: 'meteoric_iron', amount: 2 }],
+    workPerUnit: 34,
+    units: 3,
+    regrowDays: -1,
+    radius: 0.9,
+    blocks: true,
     spreads: false,
   }),
   obsidian_flow: r({
