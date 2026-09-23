@@ -33,6 +33,7 @@ export type ItemId =
   | 'salt'
   | 'obsidian'
   | 'meteoric_iron'
+  | 'bone'
   | 'limestone'
   | 'flint'
   // processed
@@ -571,6 +572,18 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     value: 12,
     color: 0xeef0f2,
     description: 'Keeps meat through a winter, which is worth more than it sounds.',
+  }),
+  bone: def({
+    id: 'bone',
+    name: 'Bone',
+    category: 'raw',
+    stackSize: 16,
+    weight: 2,
+    value: 4,
+    color: 0xd8d2bc,
+    description:
+      'Before metal, this was what a needle, a fish hook and a harpoon were '
+      + 'made of, and it is still what glue is boiled out of.',
   }),
   meteoric_iron: def({
     id: 'meteoric_iron',

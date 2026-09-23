@@ -48,8 +48,60 @@ export class ResearchSystem {
   }
 
   constructor() {
-    // Everyone starts knowing how to make a tool out of a rock and a stick.
+    // Everyone starts knowing how to make a tool out of a rock and a stick --
+    // which means knowing how to break the rock first. Unlocking the hafting
+    // without the knapping left a tree whose own rules said the settlement
+    // could not have got there.
+    this.unlocked.add('knapping');
+    this.unlocked.add('fire_making');
     this.unlocked.add('basic_tools');
+  }
+
+  /**
+   * What the world you were born into already takes for granted.
+   *
+   * A person who grows up in a medieval kingdom does not have to invent rope.
+   * `depth` is how far down the tree that common knowledge reaches, 0..1, and
+   * everything at or above that depth is simply known -- in dependency order,
+   * so nothing is unlocked whose prerequisites are not.
+   *
+   * This is not a head start handed out for free. It is the difference
+   * between founding a civilisation and being born into one, which is
+   * precisely what choosing a later age means.
+   */
+  seedCommonKnowledge(depth: number): void {
+    if (depth <= 0) return;
+    const maxTier = Math.max(...ALL_RESEARCH_IDS.map((id) => RESEARCH[id].tier));
+    const reach = depth * maxTier;
+    // Several passes, because a topic can only be taken once the things it
+    // rests on have been.
+    for (let pass = 0; pass <= maxTier; pass++) {
+      for (const id of ALL_RESEARCH_IDS) {
+        const topic = RESEARCH[id];
+        if (topic.tier > reach) continue;
+        if (this.unlocked.has(id)) continue;
+        if (!topic.requires.every((r) => this.unlocked.has(r))) continue;
+        this.unlocked.add(id);
+      }
+    }
+    this.invalidate();
+  }
+
+  /**
+   * Unlocks one topic and everything it rests on.
+   *
+   * Only the console calls this. Unlocking a topic without its prerequisites
+   * would leave a tree that says the settlement can build a forge but has
+   * never worked out how to smelt anything, so the chain comes with it.
+   */
+  forceUnlock(id: ResearchId): void {
+    const add = (target: ResearchId, depth: number): void => {
+      if (depth > 24 || this.unlocked.has(target)) return;
+      for (const req of RESEARCH[target].requires) add(req, depth + 1);
+      this.unlocked.add(target);
+    };
+    add(id, 0);
+    this.invalidate();
   }
 
   isUnlocked(id: ResearchId): boolean {

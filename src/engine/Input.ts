@@ -32,6 +32,10 @@ export type Action =
   | 'godMode'
   | 'ascend'
   | 'descend'
+  | 'placeItem'
+  | 'throwItem'
+  | 'drink'
+  | 'console'
   | 'cancel';
 
 export const DEFAULT_BINDINGS: Record<Action, string[]> = {
@@ -61,6 +65,12 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   godMode: ['KeyG'],
   ascend: ['KeyQ'],
   descend: ['KeyZ'],
+  // The hands. G used to put something down and also toggle god mode, which
+  // meant dropping your axe every time you took off.
+  placeItem: ['KeyX'],
+  throwItem: ['KeyY'],
+  drink: ['KeyH'],
+  console: ['Slash'],
   cancel: ['Escape'],
 };
 
@@ -91,6 +101,10 @@ export const ACTION_LABELS: Record<Action, string> = {
   godMode: 'God mode',
   ascend: 'Ascend',
   descend: 'Descend',
+  placeItem: 'Put down held item',
+  throwItem: 'Throw held item',
+  drink: 'Drink',
+  console: 'Console',
   cancel: 'Cancel',
 };
 

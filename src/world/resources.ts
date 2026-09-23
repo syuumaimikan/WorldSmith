@@ -66,7 +66,17 @@ export type ResourceKind =
   | 'flint_nodule'
   | 'clay_pit'
   | 'sand_pit'
-  | 'meteoric_iron';
+  | 'meteoric_iron'
+  // The world before flowers. These are not decorative variants of the
+  // plants above -- they are what there was, for three hundred million
+  // years, and the reason a primeval landscape reads as alien is that not
+  // one of them is a flowering plant and there is no grass anywhere.
+  | 'clubmoss_tree'
+  | 'tree_fern'
+  | 'horsetail'
+  | 'cycad'
+  | 'seed_fern'
+  | 'moss_mat';
 
 export type ResourceCategory = 'tree' | 'plant' | 'mineral';
 export type HarvestSkill = 'chop' | 'mine' | 'forage';
@@ -654,6 +664,100 @@ export const RESOURCES: Record<ResourceKind, ResourceDef> = {
     blocks: false,
     spreads: true,
   }),
+  // --------------------------------------------------------- the old world
+  clubmoss_tree: r({
+    // Lepidodendron: a hundred feet of green scaly trunk with no wood in it
+    // to speak of, which is most of what the coal in the ground used to be.
+    kind: 'clubmoss_tree',
+    name: 'Scale Tree',
+    category: 'tree',
+    skill: 'chop',
+    yields: [
+      { item: 'log', amount: 2 },
+      { item: 'fiber', amount: 2 },
+    ],
+    workPerUnit: 14,
+    units: 5,
+    regrowDays: -1,
+    radius: 1.5,
+    blocks: true,
+    spreads: true,
+    life: { matureYears: 12, maxYears: 40, ancientScale: 1.3 },
+  }),
+  tree_fern: r({
+    kind: 'tree_fern',
+    name: 'Tree Fern',
+    category: 'tree',
+    skill: 'chop',
+    yields: [
+      { item: 'log', amount: 1 },
+      { item: 'fiber', amount: 3 },
+    ],
+    workPerUnit: 11,
+    units: 4,
+    regrowDays: -1,
+    radius: 1.2,
+    blocks: true,
+    spreads: true,
+    life: { matureYears: 15, maxYears: 70, ancientScale: 1.25 },
+  }),
+  horsetail: r({
+    // Calamites: jointed, hollow, and in wet ground as dense as a cane brake.
+    kind: 'horsetail',
+    name: 'Giant Horsetail',
+    category: 'plant',
+    skill: 'forage',
+    yields: [{ item: 'fiber', amount: 3 }],
+    workPerUnit: 6,
+    units: 3,
+    regrowDays: 20,
+    radius: 0.7,
+    blocks: false,
+    spreads: true,
+  }),
+  cycad: r({
+    kind: 'cycad',
+    name: 'Cycad',
+    category: 'plant',
+    skill: 'forage',
+    yields: [
+      { item: 'fiber', amount: 2 },
+      { item: 'nuts', amount: 1 },
+    ],
+    workPerUnit: 8,
+    units: 3,
+    regrowDays: 40,
+    radius: 0.85,
+    blocks: false,
+    spreads: true,
+  }),
+  seed_fern: r({
+    kind: 'seed_fern',
+    name: 'Seed Fern',
+    category: 'plant',
+    skill: 'forage',
+    yields: [{ item: 'fiber', amount: 2 }],
+    workPerUnit: 6,
+    units: 2,
+    regrowDays: 18,
+    radius: 0.6,
+    blocks: false,
+    spreads: true,
+  }),
+  moss_mat: r({
+    kind: 'moss_mat',
+    name: 'Moss',
+    category: 'plant',
+    skill: 'forage',
+    yields: [{ item: 'fiber', amount: 1 }],
+    workPerUnit: 3,
+    units: 2,
+    regrowDays: 10,
+    radius: 0.4,
+    blocks: false,
+    spreads: true,
+  }),
+
   fern: r({
     kind: 'fern',
     name: 'Ferns',
@@ -1101,6 +1205,14 @@ export const BIOME_FLORA: Partial<Record<Biome, BiomeFlora>> = {
  * than a hard line where one biome stops.
  */
 export const CLIMATE_RANGE: Partial<Record<ResourceKind, { minT: number; maxT: number }>> = {
+  // The old world was warmer and wetter than this one almost everywhere, so
+  // its plants have wide ranges and stop only at real cold.
+  clubmoss_tree: { minT: 6, maxT: 40 },
+  tree_fern: { minT: 4, maxT: 40 },
+  horsetail: { minT: 0, maxT: 40 },
+  cycad: { minT: 8, maxT: 40 },
+  seed_fern: { minT: 2, maxT: 40 },
+  moss_mat: { minT: -20, maxT: 32 },
   larch: { minT: -25, maxT: 8 },
   spruce: { minT: -22, maxT: 11 },
   fir: { minT: -20, maxT: 13 },
@@ -1138,4 +1250,144 @@ export function growsAt(kind: ResourceKind, temperature: number): boolean {
   const band = CLIMATE_RANGE[kind];
   if (!band) return true;
   return temperature >= band.minT && temperature <= band.maxT;
+}
+
+/**
+ * The flora of the world before flowering plants.
+ *
+ * Used wholesale in place of `BIOME_FLORA` for a primordial world rather than
+ * filtered out of it, because it is not the same vegetation with some species
+ * missing -- it is a different biosphere. There is no grassland entry with
+ * fewer things in it; there is no grassland, because grass had not evolved,
+ * and what stands on that ground instead is a clubmoss swamp.
+ *
+ * Deliberately narrower than the modern table. Three hundred million years of
+ * divergence had not happened yet, so the same handful of lineages covers the
+ * whole world and a walk across a continent shows you much the same plants.
+ */
+export const PRIMEVAL_FLORA: Partial<Record<Biome, BiomeFlora>> = {
+  [Biome.Grassland]: {
+    // Not grass. Low seed ferns and moss over bare ground, with horsetails
+    // wherever the water table comes near the surface.
+    density: 0.3,
+    entries: [
+      { kind: 'seed_fern', weight: 24 },
+      { kind: 'moss_mat', weight: 20 },
+      { kind: 'horsetail', weight: 12 },
+      { kind: 'cycad', weight: 8 },
+      { kind: 'tree_fern', weight: 6 },
+      { kind: 'rock', weight: 7 },
+      { kind: 'flint_nodule', weight: 3 },
+    ],
+  },
+  [Biome.TemperateForest]: {
+    density: 0.82,
+    entries: [
+      { kind: 'clubmoss_tree', weight: 26 },
+      { kind: 'tree_fern', weight: 22 },
+      { kind: 'horsetail', weight: 16 },
+      { kind: 'fern', weight: 18 },
+      { kind: 'seed_fern', weight: 14 },
+      { kind: 'moss_mat', weight: 14 },
+      { kind: 'cycad', weight: 8 },
+      { kind: 'mushroom_ring', weight: 6 },
+      { kind: 'rock', weight: 4 },
+    ],
+  },
+  [Biome.DenseForest]: {
+    // The coal forest. Clubmoss trees packed close enough to shut out the
+    // sky, which is where most of the world's coal came from.
+    density: 1.5,
+    entries: [
+      { kind: 'clubmoss_tree', weight: 38 },
+      { kind: 'tree_fern', weight: 26 },
+      { kind: 'fern', weight: 20 },
+      { kind: 'horsetail', weight: 18 },
+      { kind: 'moss_mat', weight: 14 },
+      { kind: 'seed_fern', weight: 10 },
+      { kind: 'mushroom_ring', weight: 7 },
+    ],
+  },
+  [Biome.Taiga]: {
+    density: 0.55,
+    entries: [
+      { kind: 'pine', weight: 20 },
+      { kind: 'moss_mat', weight: 26 },
+      { kind: 'fern', weight: 12 },
+      { kind: 'seed_fern', weight: 10 },
+      { kind: 'rock', weight: 8 },
+      { kind: 'boulder', weight: 4 },
+    ],
+  },
+  [Biome.Tundra]: {
+    density: 0.16,
+    entries: [
+      { kind: 'moss_mat', weight: 30 },
+      { kind: 'rock', weight: 12 },
+      { kind: 'boulder', weight: 6 },
+    ],
+  },
+  [Biome.Savanna]: {
+    density: 0.26,
+    entries: [
+      { kind: 'cycad', weight: 22 },
+      { kind: 'seed_fern', weight: 16 },
+      { kind: 'tree_fern', weight: 10 },
+      { kind: 'moss_mat', weight: 8 },
+      { kind: 'rock', weight: 8 },
+    ],
+  },
+  [Biome.Desert]: {
+    density: 0.06,
+    entries: [
+      { kind: 'rock', weight: 16 },
+      { kind: 'boulder', weight: 7 },
+      { kind: 'salt_flat', weight: 3 },
+      { kind: 'moss_mat', weight: 3 },
+    ],
+  },
+  [Biome.Wetland]: {
+    // Where the old world was densest. Horsetails in standing water as thick
+    // as a reed bed, and clubmoss trees rooted in the mud between them.
+    density: 1.15,
+    entries: [
+      { kind: 'horsetail', weight: 34 },
+      { kind: 'clubmoss_tree', weight: 22 },
+      { kind: 'tree_fern', weight: 16 },
+      { kind: 'moss_mat', weight: 16 },
+      { kind: 'fern', weight: 12 },
+      { kind: 'reeds', weight: 10 },
+    ],
+  },
+  [Biome.Mountain]: {
+    density: 0.16,
+    entries: [
+      { kind: 'moss_mat', weight: 18 },
+      { kind: 'rock', weight: 20 },
+      { kind: 'boulder', weight: 10 },
+      { kind: 'seed_fern', weight: 6 },
+    ],
+  },
+  [Biome.Beach]: {
+    density: 0.1,
+    entries: [
+      { kind: 'horsetail', weight: 12 },
+      { kind: 'moss_mat', weight: 8 },
+      { kind: 'rock', weight: 8 },
+      { kind: 'sand_pit', weight: 5 },
+    ],
+  },
+  [Biome.Alpine]: {
+    density: 0.05,
+    entries: [
+      { kind: 'rock', weight: 20 },
+      { kind: 'boulder', weight: 10 },
+      { kind: 'moss_mat', weight: 4 },
+    ],
+  },
+};
+
+/** The vegetation of a world at a given stage of life's history. */
+export function floraFor(life: 'primeval' | 'settled' | 'late'): Partial<Record<Biome, BiomeFlora>> {
+  return life === 'primeval' ? PRIMEVAL_FLORA : BIOME_FLORA;
 }

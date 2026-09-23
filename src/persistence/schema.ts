@@ -12,8 +12,10 @@ import type { SerializedBody } from '../sim/Body';
 import type { WorldEvent } from '../sim/EventLog';
 import type { SerializedInventory } from '../sim/Inventory';
 import type { GameSpeed } from '../sim/Time';
+import { readEra } from '../world/eras';
+import { readMode } from '../world/modes';
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 export interface SavedTerrain {
   gridSize: number;
@@ -38,7 +40,10 @@ export interface SavedPlayer {
   y: number;
   z: number;
   yaw: number;
+  /** What the person playing called themselves. */
+  name?: string;
   stats: Record<string, number>;
+  body?: SerializedBody;
   inventory: SerializedInventory;
   quickSlots: (string | null)[];
 }
@@ -236,6 +241,23 @@ export function migrate(raw: AnySave): SaveData {
     }
     data.version = 7;
   }
+  if (data.version < 8) {
+    // v7 worlds had two ages -- 'fresh' and 'ancient' -- and no game mode,
+    // because there was only one way to play. They keep the age they had,
+    // translated onto the timeline that replaced it, and are taken to be
+    // survival worlds, which is what they were.
+    const config = (data.config ?? {}) as unknown as Record<string, unknown>;
+    config.era = readEra(config.era);
+    config.mode = readMode(config.mode);
+    if (typeof config.playerName !== 'string') config.playerName = 'Wayfarer';
+    data.config = config as never;
+    // Thirst is new. Arriving parched through no fault of your own would be
+    // an unfair way to resume, so an old save wakes up watered.
+    const player = data.player as unknown as Record<string, unknown> | undefined;
+    const stats = player?.stats as Record<string, number> | undefined;
+    if (stats && typeof stats.thirst !== 'number') stats.thirst = 100;
+    data.version = 8;
+  }
 
   return data;
 }
@@ -285,5 +307,23 @@ export function validate(data: SaveData): string | null {
   if (!Array.isArray(data.nodes)) return 'Missing resource nodes';
   if (!Array.isArray(data.buildings)) return 'Missing buildings';
   if (!Array.isArray(data.npcs)) return 'Missing people';
+
+  // The config decides what rules the world runs under, and it came off the
+  // disk like everything else. Anything unrecognised is read back to a
+  // default rather than believed.
+  data.config.era = readEra(data.config.era);
+  data.config.mode = readMode(data.config.mode);
+  data.config.playerName =
+    typeof data.config.playerName === 'string' && data.config.playerName.trim().length > 0
+      ? data.config.playerName.trim().slice(0, 32)
+      : 'Wayfarer';
+
+  const stats = data.player?.stats;
+  if (stats) {
+    for (const key of ['stamina', 'maxStamina', 'hunger', 'thirst', 'warmth']) {
+      const v = stats[key];
+      stats[key] = typeof v === 'number' && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 100;
+    }
+  }
   return null;
 }

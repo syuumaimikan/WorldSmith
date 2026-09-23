@@ -81,9 +81,13 @@ describe('the tree', () => {
 describe('what a settlement knows', () => {
   it('starts out knowing almost nothing', () => {
     const world = buildTestWorld();
-    expect(world.research.unlocked.size).toBeLessThan(3);
+    // Knapping, fire and hafting: the three things a band of people already
+    // had when they walked in, and nothing beyond them. They are worth a
+    // few per cent on the work rate and nothing else -- a settlement that
+    // can strike a flint is not a settlement that can do anything.
+    expect(world.research.unlocked.size).toBeLessThan(5);
     const e = world.research.effects;
-    expect(e.work).toBeCloseTo(1, 5);
+    expect(e.work).toBeLessThan(1.1);
     expect(e.carry).toBe(0);
   });
 

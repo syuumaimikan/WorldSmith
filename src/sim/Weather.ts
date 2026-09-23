@@ -126,6 +126,12 @@ export class WeatherSystem {
 
     if (this.forcedHours > 0) {
       this.forcedHours -= hours;
+      // The blend has to move here too. Forcing a weather set it to zero and
+      // then only the *unforced* path ever advanced it, so a god-summoned
+      // storm changed the word in the corner of the screen and nothing else:
+      // no darkening, no fog, no severity, no rain. That was the whole of
+      // "the weather changes and nothing looks different".
+      this.blend = Math.min(1, this.blend + hours * 1.4);
       this.applyProfile(hours);
       return;
     }

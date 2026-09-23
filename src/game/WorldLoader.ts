@@ -12,10 +12,12 @@ import {
   WorldSizePreset,
   Difficulty,
   WorldEra,
+  GameMode,
 } from '../world/types';
+import { eraProfile } from '../world/eras';
 import type { WorldGenMessage, WorldGenPayload } from '../world/worldgenTypes';
 import { World } from '../sim/World';
-import { ANCIENT_YEARS, preSimulate } from '../sim/Presimulate';
+import { preSimulate, strideFor } from '../sim/Presimulate';
 import { hashString } from '../core/rng';
 
 export interface GenerationProgress {
@@ -35,6 +37,8 @@ export interface NewWorldOptions {
   startingSettlers: number;
   difficulty: Difficulty;
   era: WorldEra;
+  mode: GameMode;
+  playerName: string;
 }
 
 export function makeConfig(options: NewWorldOptions): WorldConfig {
@@ -51,6 +55,8 @@ export function makeConfig(options: NewWorldOptions): WorldConfig {
     startingSettlers: options.startingSettlers,
     difficulty: options.difficulty,
     era: options.era,
+    mode: options.mode,
+    playerName: options.playerName.trim().slice(0, 32) || 'Wayfarer',
   };
 }
 
@@ -122,11 +128,23 @@ export async function assembleWorld(
 
   for (const line of payload.historyLines) world.log.addHistory(line);
 
-  // The other peoples of the world go in first, because an ancient world has
-  // to have somebody to spend its centuries on.
-  const ancient = config.era === 'ancient';
-  world.seedNeighbours(ancient);
-  if (ancient) await liveOutTheAges(world, onProgress);
+  // The other peoples of the world go in first, because a world with a past
+  // has to have somebody to spend that past on.
+  const era = eraProfile(config.era);
+  world.seedNeighbours(era.peoples);
+  // They begin knowing what their age knows, rather than scraping flints and
+  // racing through four eras during the loading screen.
+  world.technology.seedKnowledge(world, era.startingKnowledge);
+  if (era.presimYears > 0) {
+    await liveOutTheAges(world, era.presimYears, onProgress);
+    // Those centuries carried everybody a long way past where they started.
+    // An age is a statement about where the world is *now*, so what the
+    // history produced is rescaled to land on it -- keeping who got ahead.
+    world.technology.settleIntoEra(world, era.startingKnowledge);
+  }
+
+  // And so do you. Being born into a kingdom means not having to invent rope.
+  world.research.seedCommonKnowledge(era.commonKnowledge);
 
   // Settlers, wildlife and starting supplies only exist for a brand new world;
   // a loaded save brings its own.
@@ -141,11 +159,14 @@ export async function assembleWorld(
  */
 async function liveOutTheAges(
   world: World,
+  years: number,
   onProgress?: (p: GenerationProgress) => void,
 ): Promise<void> {
   const slices = 20;
+  // The stride comes from the whole run, not from one twentieth of it.
+  const stride = strideFor(years);
   for (let i = 0; i < slices; i++) {
-    preSimulate(world, ANCIENT_YEARS / slices);
+    preSimulate(world, years / slices, undefined, stride);
     onProgress?.({
       stage: 'gen.prehistory',
       fraction: (i + 1) / slices,

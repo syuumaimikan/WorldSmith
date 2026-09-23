@@ -72,6 +72,12 @@ export const VARIANT_COUNT: Record<ResourceKind, number> = {
   salt_flat: 1,
   obsidian_flow: 2,
   meteoric_iron: 2,
+  clubmoss_tree: 3,
+  tree_fern: 3,
+  horsetail: 2,
+  cycad: 2,
+  seed_fern: 2,
+  moss_mat: 2,
   limestone_outcrop: 2,
   flint_nodule: 2,
   clay_pit: 1,
@@ -258,6 +264,24 @@ export function buildFloraGeometry(
       break;
     case 'obsidian_flow':
       buildGlassyRock(b, rng, lod, sc);
+      break;
+    case 'clubmoss_tree':
+      buildScaleTree(b, rng, lod, sc);
+      break;
+    case 'tree_fern':
+      buildTreeFern(b, rng, lod, sc);
+      break;
+    case 'horsetail':
+      buildHorsetail(b, rng, lod, sc);
+      break;
+    case 'cycad':
+      buildCycad(b, rng, lod, sc);
+      break;
+    case 'seed_fern':
+      buildFern(b, rng, lod, sc);
+      break;
+    case 'moss_mat':
+      buildMoss(b, rng, lod, sc);
       break;
     case 'meteoric_iron':
       // A lump that arrived at speed: pitted, dark, and half buried in the
@@ -1007,4 +1031,138 @@ function buildFlint(b: GeoBuilder, rng: Rng, lod: Lod, sc: SeasonColors): void {
     });
   }
   if (sc.snow > 0.5) b.dodec(0.26, sc.snowCap, { y: 0.16, sy: 0.2 });
+}
+
+
+// ============================================================== the old world
+//
+// None of these is a variant of a plant above. They are the flora of the
+// world before flowering plants, which is a different silhouette from top to
+// bottom: no broad leaves, no blossom, no branching crown, and nothing that
+// makes a lawn. A landscape of them reads as alien because it is.
+
+/**
+ * Lepidodendron. A green column of diamond leaf-scars with no real wood in
+ * it, forking only right at the top into a crown of narrow leaves.
+ */
+function buildScaleTree(b: GeoBuilder, rng: Rng, lod: Lod, sc: SeasonColors): void {
+  const h = rng.range(7, 13);
+  const bark = mixHex(PALETTE.vegetation.trunk, 0x4a6b3a, 0.45);
+  const segs = lod === 0 ? 6 : 3;
+  for (let i = 0; i < segs; i++) {
+    const y0 = (i / segs) * h;
+    const y1 = ((i + 1) / segs) * h;
+    const r0 = 0.44 * (1 - (i / segs) * 0.55);
+    const r1 = 0.44 * (1 - ((i + 1) / segs) * 0.55);
+    b.cylinder(r1, r0, y1 - y0, lod === 0 ? 7 : 5, shade(bark, 0.9 + (i % 2) * 0.17), {
+      y: (y0 + y1) / 2,
+    });
+  }
+  // Two forks and a tuft of straps on each, which is all the crown it had.
+  const green = mixHex(sc.conifer, 0x5f8a3e, 0.6);
+  const forks = lod === 0 ? 2 : 1;
+  for (let f = 0; f < forks; f++) {
+    const lean = f === 0 ? 0.38 : -0.38;
+    b.cylinder(0.1, 0.22, h * 0.22, 4, bark, { x: lean * 0.6, y: h + h * 0.1, rz: -lean });
+    const straps = lod === 0 ? 7 : 3;
+    for (let i = 0; i < straps; i++) {
+      const a = (i / straps) * Math.PI * 2;
+      b.box(1.5, 0.06, 0.16, shade(green, 0.85 + rng.next() * 0.3), {
+        x: lean * 1.1 + Math.cos(a) * 0.6,
+        y: h + h * 0.2,
+        z: Math.sin(a) * 0.6,
+        ry: -a,
+        rz: -rng.range(0.35, 0.8),
+      });
+    }
+  }
+}
+
+/** A short scaly trunk with one great rosette of fronds on top of it. */
+function buildTreeFern(b: GeoBuilder, rng: Rng, lod: Lod, sc: SeasonColors): void {
+  const h = rng.range(2.6, 4.6);
+  const trunk = shade(PALETTE.vegetation.trunkDead, 0.85);
+  b.cylinder(0.2, 0.3, h, lod === 0 ? 6 : 4, trunk, { y: h / 2 });
+  const green = mixHex(sc.conifer, 0x2f6b34, 0.55);
+  const fronds = lod === 0 ? 9 : 4;
+  for (let i = 0; i < fronds; i++) {
+    const a = (i / fronds) * Math.PI * 2 + rng.range(-0.2, 0.2);
+    const len = rng.range(1.5, 2.3);
+    b.box(len, 0.06, 0.34, shade(green, 0.82 + rng.next() * 0.34), {
+      x: Math.cos(a) * len * 0.42,
+      y: h + 0.12,
+      z: Math.sin(a) * len * 0.42,
+      ry: -a,
+      rz: -rng.range(0.15, 0.48),
+    });
+  }
+}
+
+/** Calamites: jointed hollow stems in a stand, like a cane brake. */
+function buildHorsetail(b: GeoBuilder, rng: Rng, lod: Lod, sc: SeasonColors): void {
+  const green = mixHex(sc.bush, 0x6d8f3c, 0.5);
+  const stems = lod === 0 ? 6 : 3;
+  for (let i = 0; i < stems; i++) {
+    const a = rng.range(0, Math.PI * 2);
+    const rr = rng.range(0, 0.5);
+    const h = rng.range(1.4, 3.2);
+    const x = Math.cos(a) * rr;
+    const z = Math.sin(a) * rr;
+    const joints = lod === 0 ? 4 : 2;
+    for (let j = 0; j < joints; j++) {
+      const segH = h / joints;
+      b.cylinder(0.055, 0.07, segH * 0.92, 5, shade(green, 0.86 + (j % 2) * 0.2), {
+        x,
+        y: segH * j + segH / 2,
+        z,
+      });
+      // The whorl of needles at each joint, which is the whole look of it.
+      if (lod === 0) {
+        for (let k = 0; k < 5; k++) {
+          const ka = (k / 5) * Math.PI * 2;
+          b.box(0.34, 0.03, 0.03, shade(green, 1.05), {
+            x: x + Math.cos(ka) * 0.16,
+            y: segH * (j + 1),
+            z: z + Math.sin(ka) * 0.16,
+            ry: -ka,
+            rz: -0.5,
+          });
+        }
+      }
+    }
+  }
+}
+
+/** A squat barrel of a trunk under a stiff crown of pinnate leaves. */
+function buildCycad(b: GeoBuilder, rng: Rng, lod: Lod, sc: SeasonColors): void {
+  const h = rng.range(0.55, 1.2);
+  b.cylinder(0.34, 0.4, h, lod === 0 ? 7 : 5, PALETTE.vegetation.trunkDead, { y: h / 2 });
+  const green = mixHex(sc.conifer, 0x35702f, 0.6);
+  const leaves = lod === 0 ? 10 : 5;
+  for (let i = 0; i < leaves; i++) {
+    const a = (i / leaves) * Math.PI * 2;
+    const len = rng.range(0.9, 1.5);
+    b.box(len, 0.05, 0.2, shade(green, 0.86 + rng.next() * 0.26), {
+      x: Math.cos(a) * len * 0.4,
+      y: h + 0.2,
+      z: Math.sin(a) * len * 0.4,
+      ry: -a,
+      rz: -rng.range(0.05, 0.3),
+    });
+  }
+}
+
+/** Ground cover from before there was any such thing as turf. */
+function buildMoss(b: GeoBuilder, rng: Rng, lod: Lod, sc: SeasonColors): void {
+  const green = mixHex(sc.bush, 0x4c7a3a, 0.7);
+  const n = lod === 0 ? 9 : 4;
+  for (let i = 0; i < n; i++) {
+    const a = rng.range(0, Math.PI * 2);
+    const rr = rng.range(0, 0.45);
+    b.blob(rng.range(0.12, 0.24), 0, shade(green, 0.8 + rng.next() * 0.4), {
+      x: Math.cos(a) * rr,
+      y: rng.range(0.03, 0.09),
+      z: Math.sin(a) * rr,
+    });
+  }
 }

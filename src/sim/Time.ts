@@ -80,9 +80,20 @@ export class GameTime {
    * by the game loop when it decides how much simulated time a frame buys, not
    * here, so that one simulation tick always means the same thing.
    */
-  advance(simSeconds: number): void {
+  advance(simSeconds: number, fireCallbacks = true): void {
     if (simSeconds <= 0) return;
     this.totalHours += simSeconds / SECONDS_PER_GAME_HOUR;
+
+    // The pre-simulation runs centuries in five-day strides and has no
+    // settlers, buildings, piles or economy for a daily pass to serve. Firing
+    // one anyway meant a seven-hundred-year world spent most of its loading
+    // time on days nobody lived through.
+    if (!fireCallbacks) {
+      const quiet = this.snapshot();
+      this.previousDay = quiet.totalDays;
+      this.previousSeason = quiet.season;
+      return;
+    }
 
     const s = this.snapshot();
     if (s.totalDays !== this.previousDay) {

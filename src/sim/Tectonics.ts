@@ -172,7 +172,13 @@ export class Tectonics {
     for (const f of this.faults) {
       // Loading rate: metres per thousand years, scaled to something a
       // decades-long game can feel without being a rupture a week.
-      f.stress += (f.closingRate / 1000) * days * 0.02;
+      //
+      // Slower than it was. At the old rate a single fault let go about every
+      // fifteen years, which over the seven centuries a late world lives
+      // through before the player arrives is fifty ruptures per segment and
+      // several thousand earthquakes -- more shaking than any real margin has
+      // ever produced, and most of the time a world spent being made.
+      f.stress += (f.closingRate / 1000) * days * 0.006;
       if (f.stress < f.strength) continue;
       this.rupture(world, f);
     }
@@ -185,7 +191,15 @@ export class Tectonics {
     // Everything the segment had stored goes at once.
     const released = f.stress;
     const magnitude = clamp01(0.25 + released * 0.45 + f.closingRate / 90);
-    const radius = world.terrain.worldSize * (0.08 + magnitude * 0.22);
+    // How far the shaking reaches, in metres rather than as a fraction of the
+    // map. A quake is a physical event with a physical size: making its reach
+    // proportional to the world meant that enlarging the world enlarged every
+    // earthquake in it, and a great shock covering a third of a continent is
+    // both wrong and ruinously expensive to apply.
+    const radius = Math.min(
+      world.terrain.worldSize * 0.45,
+      260 + magnitude * magnitude * 1400,
+    );
 
     f.stress = 0;
     f.strength = this.rng.range(0.55, 1.3);

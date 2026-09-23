@@ -181,6 +181,12 @@ export interface ActionResult {
   effect?: 'woodchips' | 'stonedust' | 'dust';
 }
 
+/** How much of a meal is water. A third, roughly, for ordinary food. */
+const WATER_IN_FOOD = 0.3;
+
+/** How far you can reach water to drink from it, in metres. */
+export const DRINK_REACH = 2.2;
+
 /** Player work rate. Comparable to a skilled settler, but not better. */
 const PLAYER_WORK_RATE = 4.4;
 
@@ -427,6 +433,10 @@ export function useEquipped(world: World): ActionResult {
   if (def.category === 'food') {
     const before = p.stats.hunger;
     p.stats.hunger = Math.min(100, p.stats.hunger + nutritionOf(item));
+    // Most food is partly water. Bread is not, which is why eating dry in a
+    // desert is a bad idea and why fruit is worth more there than its
+    // calories say.
+    p.stats.thirst = Math.min(100, p.stats.thirst + WATER_IN_FOOD * nutritionOf(item));
     p.inventory.remove(item, 1);
     if (p.inventory.count(item) === 0) p.equippedSlot = -1;
     return {
@@ -587,4 +597,47 @@ export function putIntoStore(
   if (moved <= 0) return { kind: 'full', message: t('prod.idleReason.storeFull') };
   if (p.inventory.count(item) === 0 && p.equipped() === item) p.equippedSlot = -1;
   return { kind: 'stored', message: t('inv.stored', { count: moved }) };
+}
+
+// --------------------------------------------------------------- drinking
+
+/**
+ * Whether there is something to drink within arm's reach.
+ *
+ * Fresh water only. The sea is the largest body of water in the world and
+ * none of it is any use, which is a fact people have died of, so drinking
+ * from it is simply not offered.
+ */
+export function waterInReach(world: World): { x: number; z: number; fresh: boolean } | null {
+  const p = world.player;
+  const t = world.terrain;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const x = p.position.x + Math.cos(a) * DRINK_REACH;
+    const z = p.position.z + Math.sin(a) * DRINK_REACH;
+    if (t.waterDepthAt(x, z) < 0.12) continue;
+    // Above sea level it is rain, a river or a lake; at or below it, it is
+    // the sea, and the sea is not a drink.
+    const fresh = t.heightAt(x, z) > 0.4;
+    return { x, z, fresh };
+  }
+  return null;
+}
+
+/** Drinks from whatever is in reach. */
+export function drinkFromWorld(world: World): ActionResult {
+  const p = world.player;
+  const found = waterInReach(world);
+  if (!found) return { kind: 'none', message: t('act.noWaterHere') };
+  if (!found.fresh) return { kind: 'none', message: t('act.saltWater') };
+  if (p.stats.thirst > 97) return { kind: 'none', message: t('act.notThirsty') };
+  const gained = p.drink(1);
+  return {
+    kind: 'used',
+    message: t('act.drank', { gained: Math.round(gained) }),
+    x: found.x,
+    y: world.terrain.heightAt(found.x, found.z),
+    z: found.z,
+    effect: 'dust',
+  };
 }

@@ -10,14 +10,53 @@ import { Rng } from '../core/rng';
 import { Biome } from '../world/types';
 import { ItemId } from '../data/items';
 import { PALETTE } from '../render/Palette';
+import type { LifeStage } from '../world/eras';
 
-export type AnimalSpecies = 'deer' | 'boar' | 'rabbit' | 'wolf' | 'fox' | 'sheep' | 'bird';
+export type AnimalSpecies =
+  | 'deer'
+  | 'boar'
+  | 'rabbit'
+  | 'wolf'
+  | 'fox'
+  | 'sheep'
+  | 'bird'
+  // Things a modern world does not have, because people ate them.
+  | 'aurochs'
+  | 'mammoth'
+  | 'bear'
+  | 'horse'
+  | 'goat'
+  // And things no world with people in it ever had.
+  | 'labyrinthodont'
+  | 'sail_lizard'
+  | 'giant_dragonfly';
+
+/**
+ * How an animal is put together, which decides how it is drawn.
+ *
+ * A sprawling amphibian does not stand on its legs the way a deer does -- it
+ * lies between them -- and a mammoth is not a big deer. The silhouette is
+ * most of what makes a creature recognisable at any distance, so it is a
+ * property of the species rather than something the renderer guesses.
+ */
+export type AnimalBuild = 'standard' | 'heavy' | 'sprawling' | 'flyer';
 
 export type AnimalState = 'idle' | 'wander' | 'graze' | 'flee' | 'hunt' | 'sleep';
 
 export interface AnimalDef {
   species: AnimalSpecies;
   name: string;
+  /** Body plan, for the renderer. Defaults to a four-legged standard build. */
+  build?: AnimalBuild;
+  /**
+   * Which stages of life's history this creature exists in.
+   *
+   * Not a spawn table: an aurochs is absent from a modern world because
+   * aurochsen were hunted to extinction, and a labyrinthodont is absent from
+   * every world with people in it because it was three hundred million years
+   * too early.
+   */
+  life?: LifeStage[];
   diet: 'herbivore' | 'predator' | 'scavenger';
   speed: number;
   fleeSpeed: number;
@@ -39,6 +78,7 @@ export interface AnimalDef {
 export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
   deer: {
     species: 'deer',
+    life: ['settled', 'late'],
     name: 'Deer',
     diet: 'herbivore',
     speed: 1.5,
@@ -58,6 +98,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
   },
   boar: {
     species: 'boar',
+    life: ['settled', 'late'],
     name: 'Boar',
     diet: 'herbivore',
     speed: 1.2,
@@ -77,6 +118,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
   },
   rabbit: {
     species: 'rabbit',
+    life: ['settled', 'late'],
     name: 'Rabbit',
     diet: 'herbivore',
     speed: 1.1,
@@ -93,6 +135,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
   },
   fox: {
     species: 'fox',
+    life: ['settled', 'late'],
     name: 'Fox',
     diet: 'predator',
     speed: 1.8,
@@ -109,6 +152,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
   },
   wolf: {
     species: 'wolf',
+    life: ['settled', 'late'],
     name: 'Wolf',
     diet: 'predator',
     speed: 2.1,
@@ -125,6 +169,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
   },
   sheep: {
     species: 'sheep',
+    life: ['settled', 'late'],
     name: 'Wild Sheep',
     diet: 'herbivore',
     speed: 1.1,
@@ -144,6 +189,7 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
   },
   bird: {
     species: 'bird',
+    life: ['settled', 'late'],
     name: 'Bird',
     diet: 'scavenger',
     speed: 3.2,
@@ -164,6 +210,185 @@ export const ANIMALS: Record<AnimalSpecies, AnimalDef> = {
     herdSize: [2, 6],
     density: 34,
     lifespan: [3, 8],
+  },
+  // ------------------------------------------------------ the great beasts
+  //
+  // Every one of these was alive when people arrived and dead by the time
+  // they had cities. They are in the world for the ages when they were, and
+  // gone from the ages when they were not, which is the difference between
+  // a history and a bestiary.
+  aurochs: {
+    species: 'aurochs',
+    name: 'Aurochs',
+    build: 'heavy',
+    life: ['settled'],
+    diet: 'herbivore',
+    speed: 1.2,
+    fleeSpeed: 6.4,
+    awareness: 24,
+    yields: [
+      { item: 'meat', amount: 9 },
+      { item: 'hide', amount: 4 },
+      { item: 'bone', amount: 3 },
+    ],
+    biomes: [Biome.Grassland, Biome.TemperateForest, Biome.Wetland, Biome.Savanna],
+    colour: 0x3c332b,
+    bellyColour: 0x5c4c3c,
+    size: 1.6,
+    herdSize: [3, 8],
+    density: 9,
+    lifespan: [14, 25],
+  },
+  mammoth: {
+    species: 'mammoth',
+    name: 'Mammoth',
+    build: 'heavy',
+    life: ['settled'],
+    diet: 'herbivore',
+    speed: 0.95,
+    fleeSpeed: 4.6,
+    awareness: 30,
+    yields: [
+      { item: 'meat', amount: 22 },
+      { item: 'hide', amount: 8 },
+      { item: 'bone', amount: 10 },
+    ],
+    biomes: [Biome.Tundra, Biome.Taiga],
+    colour: 0x6b4f38,
+    bellyColour: 0x8a6c4e,
+    size: 2.6,
+    herdSize: [2, 6],
+    density: 4,
+    lifespan: [40, 70],
+  },
+  bear: {
+    species: 'bear',
+    name: 'Bear',
+    build: 'heavy',
+    life: ['settled', 'late'],
+    diet: 'predator',
+    speed: 1.4,
+    fleeSpeed: 6.8,
+    awareness: 28,
+    yields: [
+      { item: 'meat', amount: 6 },
+      { item: 'hide', amount: 3 },
+    ],
+    biomes: [Biome.DenseForest, Biome.Taiga, Biome.Mountain],
+    colour: 0x4a3a2e,
+    bellyColour: 0x3a2e26,
+    size: 1.15,
+    herdSize: [1, 1],
+    density: 4,
+    lifespan: [15, 28],
+  },
+  horse: {
+    species: 'horse',
+    name: 'Wild Horse',
+    life: ['settled', 'late'],
+    diet: 'herbivore',
+    speed: 1.9,
+    fleeSpeed: 9.4,
+    awareness: 30,
+    yields: [
+      { item: 'meat', amount: 6 },
+      { item: 'hide', amount: 3 },
+    ],
+    biomes: [Biome.Grassland, Biome.Savanna, Biome.Tundra],
+    colour: 0x7a5c3e,
+    bellyColour: 0x9a7a58,
+    size: 1.25,
+    herdSize: [4, 10],
+    density: 12,
+    lifespan: [18, 30],
+  },
+  goat: {
+    species: 'goat',
+    name: 'Wild Goat',
+    life: ['settled', 'late'],
+    diet: 'herbivore',
+    speed: 1.3,
+    fleeSpeed: 6,
+    awareness: 22,
+    yields: [
+      { item: 'meat', amount: 2 },
+      { item: 'hide', amount: 1 },
+      { item: 'fiber', amount: 2 },
+    ],
+    biomes: [Biome.Mountain, Biome.Alpine, Biome.Desert],
+    colour: 0x8a7a62,
+    bellyColour: 0xc4b498,
+    size: 0.62,
+    herdSize: [3, 7],
+    density: 18,
+    lifespan: [8, 16],
+  },
+
+  // --------------------------------------------------------- the old world
+  labyrinthodont: {
+    // A four-metre amphibian with a skull like a paving slab, lying in the
+    // shallows of a coal swamp waiting for something to swim past.
+    species: 'labyrinthodont',
+    name: 'Labyrinthodont',
+    build: 'sprawling',
+    life: ['primeval'],
+    diet: 'predator',
+    speed: 0.7,
+    fleeSpeed: 3.2,
+    awareness: 18,
+    yields: [
+      { item: 'meat', amount: 7 },
+      { item: 'hide', amount: 3 },
+    ],
+    biomes: [Biome.Wetland, Biome.Beach, Biome.DenseForest],
+    colour: 0x4a5a44,
+    bellyColour: 0x8a9a72,
+    size: 1.3,
+    herdSize: [1, 2],
+    density: 8,
+    lifespan: [12, 30],
+  },
+  sail_lizard: {
+    species: 'sail_lizard',
+    name: 'Sail-back',
+    build: 'sprawling',
+    life: ['primeval'],
+    diet: 'herbivore',
+    speed: 0.8,
+    fleeSpeed: 3.8,
+    awareness: 20,
+    yields: [
+      { item: 'meat', amount: 8 },
+      { item: 'hide', amount: 4 },
+      { item: 'bone', amount: 2 },
+    ],
+    biomes: [Biome.Grassland, Biome.Savanna, Biome.Desert, Biome.Wetland],
+    colour: 0x6d5a3e,
+    bellyColour: 0xa89060,
+    size: 1.5,
+    herdSize: [1, 3],
+    density: 7,
+    lifespan: [15, 35],
+  },
+  giant_dragonfly: {
+    // Meganeura. Seventy centimetres across, and only possible because the
+    // air of that world had far more oxygen in it than this one does.
+    species: 'giant_dragonfly',
+    name: 'Meganeura',
+    build: 'flyer',
+    life: ['primeval'],
+    diet: 'scavenger',
+    speed: 4.2,
+    fleeSpeed: 9,
+    awareness: 22,
+    yields: [],
+    biomes: [Biome.Wetland, Biome.DenseForest, Biome.TemperateForest, Biome.Beach],
+    colour: 0x2f6a5e,
+    bellyColour: 0x58a08a,
+    size: 0.5,
+    herdSize: [1, 4],
+    density: 26,
+    lifespan: [1, 2],
   },
 };
 
@@ -224,10 +449,15 @@ export function createAnimal(
   };
 }
 
-export function speciesForBiome(biome: Biome): AnimalSpecies[] {
+export function speciesForBiome(biome: Biome, life: LifeStage = 'settled'): AnimalSpecies[] {
   const out: AnimalSpecies[] = [];
   for (const def of Object.values(ANIMALS)) {
-    if (def.biomes.includes(biome)) out.push(def.species);
+    if (!def.biomes.includes(biome)) continue;
+    // A species with no stages listed is one that has been here the whole
+    // time people have; the ones that name their stages are the ones that
+    // came and went.
+    if (def.life && !def.life.includes(life)) continue;
+    out.push(def.species);
   }
   return out;
 }

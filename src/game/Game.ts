@@ -20,6 +20,7 @@ import { VegetationRenderer } from '../render/VegetationRenderer';
 import { BuildingRenderer } from '../render/BuildingRenderer';
 import { PileRenderer } from '../render/PileRenderer';
 import { ThrownRenderer } from '../render/ThrownRenderer';
+import { Precipitation } from '../render/Precipitation';
 import { NpcRenderer } from '../render/NpcRenderer';
 import { WildlifeRenderer } from '../render/WildlifeRenderer';
 import { ParticleSystem } from '../render/Particles';
@@ -38,6 +39,7 @@ import {
   InteractTarget,
   applyToolWork,
   equipSlot,
+  drinkFromWorld,
   findTarget,
   interact,
   placeEquipped,
@@ -116,6 +118,8 @@ export class Game {
   readonly buildingRenderer: BuildingRenderer;
   readonly pileRenderer: PileRenderer;
   readonly thrownRenderer: ThrownRenderer;
+  readonly precipitation: Precipitation;
+  private windVector = new Vector3();
   readonly npcRenderer: NpcRenderer;
   readonly wildlifeRenderer: WildlifeRenderer;
   readonly particles: ParticleSystem;
@@ -202,6 +206,7 @@ export class Game {
     this.buildingRenderer = new BuildingRenderer(this.scene, season);
     this.pileRenderer = new PileRenderer(this.scene);
     this.thrownRenderer = new ThrownRenderer(this.scene);
+    this.precipitation = new Precipitation(this.scene);
     this.npcRenderer = new NpcRenderer(this.scene);
     this.wildlifeRenderer = new WildlifeRenderer(this.scene);
     this.particles = new ParticleSystem(this.scene);
@@ -469,14 +474,19 @@ export class Game {
         if (r.message) this.toast(r.message);
         if (r.kind === 'used') this.audio.play('pickup');
       }
-      if (input.keyPressed('KeyT')) {
+      if (input.wasPressed('drink')) {
+        const r = drinkFromWorld(this.world);
+        if (r.message) this.toast(r.message);
+        if (r.kind === 'used') this.audio.play('pickup');
+      }
+      if (input.wasPressed('throwItem')) {
         // Thrown where the camera is pointed, at a slight lift, which is how
         // a person throws when they are not aiming at their own feet.
         const r = throwEquipped(this.world, this.cameras.pitch * -1 + 0.18);
         if (r.message) this.toast(r.message);
         if (r.kind === 'thrown') this.audio.play('pickup');
       }
-      if (input.keyPressed('KeyG')) {
+      if (input.wasPressed('placeItem')) {
         // A pace in front of them, which is where a person puts things down.
         const p = this.world.player;
         const px = p.position.x + Math.sin(p.yaw) * 1.3;
@@ -910,20 +920,29 @@ export class Game {
       }
     }
 
-    if (world.weather.isPrecipitating) {
-      const isSnow = world.weather.current === 'snow';
-      const heavy = world.weather.current === 'heavy_rain' || world.weather.current === 'storm';
-      const n = Math.round((heavy ? 26 : 12) * dt * 60 * 0.03);
+    // Weather you can see. A dozen particles a second within twenty metres
+    // was a rumour of rain; this is the downpour itself, one draw call of it,
+    // leaning with the same wind that spreads the fires.
+    const w = world.weather;
+    const heavy = w.current === 'heavy_rain' || w.current === 'storm';
+    const speed = 2 + w.windStrength * 16;
+    this.windVector.set(Math.sin(w.windDirection) * speed, 0, Math.cos(w.windDirection) * speed);
+    this.precipitation.update(dt, {
+      kind: w.current,
+      intensity: w.isPrecipitating ? (heavy ? 0.65 + w.severity * 0.35 : 0.3 + w.severity * 0.3) : 0,
+      wind: this.windVector,
+    }, camPos);
+
+    // Splashes where the rain is actually landing, which is what makes it
+    // look like it is hitting the ground rather than passing through it.
+    if (w.isPrecipitating && w.current !== 'snow') {
+      const n = heavy ? 5 : 2;
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
-        const r = Math.random() * 22;
-        this.particles.emit(
-          isSnow ? 'leaves' : 'splash',
-          camPos.x + Math.cos(a) * r,
-          camPos.y + 12,
-          camPos.z + Math.sin(a) * r,
-          1,
-        );
+        const r = Math.random() * 16;
+        const x = camPos.x + Math.cos(a) * r;
+        const z = camPos.z + Math.sin(a) * r;
+        this.particles.emit('splash', x, world.terrain.heightAt(x, z) + 0.05, z, 1);
       }
     }
 
@@ -1065,6 +1084,7 @@ export class Game {
     this.npcRenderer.dispose();
     this.pileRenderer.dispose();
     this.thrownRenderer.dispose();
+    this.precipitation.dispose();
     this.buildingRenderer.dispose();
     this.vegetation.dispose();
     this.terrainRenderer.dispose();

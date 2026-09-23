@@ -30,6 +30,16 @@ export class TerrainEditor {
   private terrain: Terrain;
   private history: TerrainEdit[] = [];
   private maxHistory = 12;
+  /**
+   * Whether an edit keeps what it overwrote so it can be undone.
+   *
+   * On during play, because the god tools need it. Off while a world is
+   * being lived out before the player arrives: centuries of tectonics is
+   * thousands of edits over hundreds of thousands of tiles, and keeping the
+   * previous height of every one of them so that somebody could undo an
+   * earthquake from the fourth century is pure cost.
+   */
+  recordHistory = true;
 
   constructor(terrain: Terrain) {
     this.terrain = terrain;
@@ -221,8 +231,10 @@ export class TerrainEditor {
   }
 
   private finish(edit: TerrainEdit): void {
-    this.history.push(edit);
-    if (this.history.length > this.maxHistory) this.history.shift();
+    if (this.recordHistory) {
+      this.history.push(edit);
+      if (this.history.length > this.maxHistory) this.history.shift();
+    }
     this.refreshDerived(edit.indices);
   }
 

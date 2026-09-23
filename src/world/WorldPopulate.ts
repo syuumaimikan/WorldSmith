@@ -12,7 +12,7 @@ import { clamp01, smoothstep } from '../core/math';
 import { GeologyField, ORE_IN_ROCK, readGeology, Rock } from './Geology';
 import { Biome, OreVein, PointOfInterest, TerrainData, WorldConfig } from './types';
 import {
-  BIOME_FLORA,
+  floraFor,
   growsAt,
   RESOURCES,
   ResourceKind,
@@ -20,6 +20,7 @@ import {
   yieldOf,
 } from './resources';
 import type { ProgressFn } from './TerrainGen';
+import { eraProfile } from './eras';
 
 /** Global tuning so biome tables stay readable as "relative" densities. */
 const FLORA_SCALE = 2.6;
@@ -56,6 +57,11 @@ export function populateWorld(
   const clumpNoise = new Noise2D(rng.int(0, 1e9));
   const varietyNoise = new Noise2D(rng.int(0, 1e9));
 
+  // Which biosphere this world has evolved. A primordial world is not the
+  // modern one with species removed -- it is a different set of plants
+  // entirely, because grass and flowers had not happened yet.
+  const floraTable = floraFor(eraProfile(config.era).life);
+
   const occupied = new Uint8Array(N * N);
   const nodes: ResourceNode[] = [];
   let nextId = 1;
@@ -78,7 +84,7 @@ export function populateWorld(
       if (terrain.slope[i] > 0.72) continue;
 
       const biome = terrain.biome[i] as Biome;
-      const flora = BIOME_FLORA[biome];
+      const flora = floraTable[biome];
       if (!flora) continue;
 
       // Clump modulation: this is what produces groves instead of a carpet.

@@ -405,7 +405,14 @@ export class DisasterManager {
     );
   }
 
-  /** The nearest tile of real sea, for launching a wave off. */
+  /**
+   * The nearest tile of real sea, for launching a wave off.
+   *
+   * Searched outward in rings rather than over the whole square, and stopped
+   * at the first ring that finds water. An epicentre on a beach answers in a
+   * few dozen tests; only one in the middle of a continent pays for the full
+   * radius, and that one is looking for something that is not there.
+   */
   private nearestOpenWater(
     world: World,
     x: number,
@@ -414,27 +421,40 @@ export class DisasterManager {
   ): { x: number; z: number } | null {
     const t = world.terrain;
     const ts = t.tileSize;
-    const r = Math.ceil(maxDistance / ts);
+    const maxRing = Math.ceil(maxDistance / ts);
     const cx = t.tileX(x);
     const cz = t.tileZ(z);
-    let best: { x: number; z: number } | null = null;
-    let bestD = Infinity;
-    for (let dz = -r; dz <= r; dz += 2) {
-      for (let dx = -r; dx <= r; dx += 2) {
-        const tx = cx + dx;
-        const tz = cz + dz;
-        if (!t.inBounds(tx, tz)) continue;
-        const i = t.index(tx, tz);
-        // Real sea, not a pond: it has to be below sea level and deep enough
-        // to have something in it to displace.
-        if (t.data.height[i] > -3 || t.waterHeight[i] <= t.data.height[i]) continue;
-        const d = Math.hypot(dx, dz) * ts;
-        if (d > maxDistance || d >= bestD) continue;
-        bestD = d;
-        best = { x: t.worldXOf(tx), z: t.worldZOf(tz) };
+
+    const isSea = (tx: number, tz: number): boolean => {
+      if (!t.inBounds(tx, tz)) return false;
+      const i = t.index(tx, tz);
+      // Real sea, not a pond: below sea level, and deep enough to have
+      // something in it to displace.
+      return t.data.height[i] <= -3 && t.waterHeight[i] > t.data.height[i];
+    };
+
+    if (isSea(cx, cz)) return { x: t.worldXOf(cx), z: t.worldZOf(cz) };
+
+    // Rings, two tiles apart, which is fine enough not to step over a river
+    // mouth and coarse enough to cross a continent cheaply.
+    for (let r = 2; r <= maxRing; r += 2) {
+      const step = Math.max(2, Math.floor(r / 6));
+      for (let d = -r; d <= r; d += step) {
+        const candidates: [number, number][] = [
+          [cx + d, cz - r],
+          [cx + d, cz + r],
+          [cx - r, cz + d],
+          [cx + r, cz + d],
+        ];
+        for (const [tx, tz] of candidates) {
+          if (!isSea(tx, tz)) continue;
+          const dist = Math.hypot(tx - cx, tz - cz) * ts;
+          if (dist > maxDistance) continue;
+          return { x: t.worldXOf(tx), z: t.worldZOf(tz) };
+        }
       }
     }
-    return best;
+    return null;
   }
 
   // =======================================================================

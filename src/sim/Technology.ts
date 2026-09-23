@@ -23,7 +23,14 @@ import { ALL_RESEARCH_IDS } from '../data/research';
 import type { Nation } from './Nations';
 import type { World } from './World';
 
-export type EraId = 'stone' | 'bronze' | 'iron' | 'classical' | 'medieval';
+export type EraId =
+  | 'stone'
+  | 'bronze'
+  | 'iron'
+  | 'classical'
+  | 'medieval'
+  | 'industrial'
+  | 'modern';
 
 export interface EraDef {
   id: EraId;
@@ -48,6 +55,11 @@ export const ERAS: EraDef[] = [
   { id: 'iron', threshold: 420, carrying: 1.35, production: 1.5, martial: 1.6 },
   { id: 'classical', threshold: 1000, carrying: 1.6, production: 1.9, martial: 2 },
   { id: 'medieval', threshold: 2100, carrying: 1.9, production: 2.4, martial: 2.5 },
+  // Past here the numbers stop being multiples of a hand and a hoe. An
+  // industrial country feeds several times the people off the same ground
+  // and its army is not comparable to the one before it at all.
+  { id: 'industrial', threshold: 3600, carrying: 3.2, production: 4.5, martial: 4.2 },
+  { id: 'modern', threshold: 6000, carrying: 5.5, production: 8, martial: 7 },
 ];
 
 /** Game hours between passes. Knowledge moves at the pace of lifetimes. */
@@ -98,6 +110,56 @@ export class TechnologySystem {
       if (!best || era.threshold > best.era.threshold) best = { nation: n, era };
     }
     return best;
+  }
+
+  /**
+   * Gives every people in the world the know-how of the age it was born into.
+   *
+   * A world that begins in the middle ages does not begin with everybody
+   * scraping flints and then race through four eras during the loading
+   * screen. It begins knowing what the middle ages knew. The pre-simulation
+   * still runs on top of this -- what it produces is the difference between
+   * the peoples, which is the part that has to be earned.
+   */
+  seedKnowledge(world: World, base: number): void {
+    if (base <= 0) return;
+    for (const nation of world.nations.nations) {
+      if (nation.isPlayer) continue;
+      // Not all alike: a world is never uniformly advanced, and the spread is
+      // what makes one neighbour worth trading with and another worth
+      // fearing.
+      const spread = 0.6 + ((nation.id * 2654435761) % 1000) / 1000 * 0.75;
+      this.knowledge.set(nation.id, Math.round(base * spread));
+    }
+  }
+
+  /**
+   * Puts the world in the age it said it was in.
+   *
+   * The pre-simulation runs on top of the seeded know-how, and seven hundred
+   * years of it carries everybody well past where they started -- so a world
+   * that promised the middle ages handed the player six industrial powers.
+   * This rescales what the centuries produced so that the middle of the pack
+   * sits at the age that was chosen, while keeping the spread the history
+   * actually made: whoever got ahead is still ahead, and by the same margin.
+   */
+  settleIntoEra(world: World, target: number): void {
+    if (target <= 0) return;
+    const values: number[] = [];
+    for (const nation of world.nations.nations) {
+      if (nation.isPlayer) continue;
+      values.push(this.knowledge.get(nation.id) ?? 0);
+    }
+    if (values.length === 0) return;
+    values.sort((a, b) => a - b);
+    const median = values[Math.floor(values.length / 2)];
+    if (median <= 1) return;
+    const scale = target / median;
+    for (const nation of world.nations.nations) {
+      if (nation.isPlayer) continue;
+      this.knowledge.set(nation.id, (this.knowledge.get(nation.id) ?? 0) * scale);
+    }
+    this.reported.clear();
   }
 
   // =========================================================================

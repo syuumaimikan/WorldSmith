@@ -39,7 +39,7 @@ function buildAncientWorld(config: WorldConfig, years = ANCIENT_YEARS): World {
     populated.startX,
     populated.startZ,
   );
-  world.seedNeighbours(true);
+  world.seedNeighbours(1.3);
   preSimulate(world, years);
   world.settle();
   return world;

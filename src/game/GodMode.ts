@@ -19,6 +19,7 @@ import { RESOURCES, ResourceKind } from '../world/resources';
 import { Biome } from '../world/types';
 import { speciesForBiome } from '../sim/Wildlife';
 import type { WeatherKind } from '../sim/Weather';
+import { eraProfile } from '../world/eras';
 
 export type GodCategory = 'weather' | 'geology' | 'water' | 'life' | 'civilization' | 'disaster';
 
@@ -292,7 +293,7 @@ export class GodMode {
   private spawnWildlife(x: number, z: number, radius: number): void {
     const w = this.world;
     const biome = w.terrain.biomeAt(x, z);
-    const options = speciesForBiome(biome);
+    const options = speciesForBiome(biome, eraProfile(w.config.era).life);
     if (options.length === 0) return;
     const species = w.rng.pick(options);
     const herd = w.rng.int(3, 6);

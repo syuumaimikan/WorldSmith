@@ -65,6 +65,9 @@ import { makeHotspots } from '../world/Plates';
 import { KarstSystem } from './Sinkholes';
 import { SavedBuilding, SavedNpc, SavedJob, SavedVolcano } from '../persistence/schema';
 import { Inventory } from './Inventory';
+import { modeRules } from '../world/modes';
+import type { GameMode } from '../world/modes';
+import { eraProfile } from '../world/eras';
 
 export interface HarvestResult {
   items: { item: ItemId; amount: number }[];
@@ -229,6 +232,7 @@ export class World {
     for (const n of nodes) if (n.id >= this.nextEntityId) this.nextEntityId = n.id + 1;
 
     this.player = new Player(startX, startZ);
+    this.player.name = config.playerName || 'Wayfarer';
     this.player.placeOnGround(terrain);
 
     this.time.onNewDay.push((day) => this.onNewDay(day));
@@ -279,9 +283,9 @@ export class World {
    * skipped century unaffordable for no gain anybody could see. A month at a
    * time is well inside what the eye can tell.
    */
-  private ageWoodland(days: number): void {
+  private ageWoodland(days: number, interval = 30): void {
     this.woodlandDebt += days;
-    if (this.woodlandDebt < 30) return;
+    if (this.woodlandDebt < interval) return;
     const elapsed = this.woodlandDebt;
     this.woodlandDebt = 0;
     const years = elapsed / DAYS_PER_YEAR;
@@ -348,6 +352,48 @@ export class World {
   }
 
   /** Depleted nodes coming back, shared by played and skipped days. */
+  /** Trees that are standing and can seed, cached between days. */
+  private seedTreeCache: ResourceNode[] = [];
+  private seedTreeStamp = -1;
+
+  private seedingTrees(): ResourceNode[] {
+    // Rebuilt when the woodland has changed by enough to matter, not every
+    // time a single sapling takes. A felled tree lingering in the list for a
+    // few days costs nothing -- the worst that happens is that a seed is
+    // scattered from a stump, which is where seeds come from anyway.
+    const drift = Math.abs(this.nodes.length - this.seedTreeStamp);
+    if (this.seedTreeStamp >= 0 && drift < this.seedTreeStamp * 0.02 + 32) {
+      return this.seedTreeCache;
+    }
+    this.seedTreeStamp = this.nodes.length;
+    this.seedTreeCache = this.nodes.filter(
+      (n) => !n.depleted && RESOURCES[n.kind].spreads && RESOURCES[n.kind].category === 'tree',
+    );
+    return this.seedTreeCache;
+  }
+
+  /**
+   * A century of weather and growth without a century of days.
+   *
+   * The pre-simulation runs political time, not human time: there are no
+   * settlers, no buildings, no piles and no economy, so the per-day pass that
+   * serves those is pure waste. What the land does over that time still has
+   * to happen, and this is that -- the same woodland ageing and the same
+   * seeding, at a scale the centuries can afford.
+   */
+  livePastEcology(days: number): void {
+    // Once a decade rather than once a month. The pass is over every node in
+    // the world -- a couple of hundred thousand of them on a large map -- and
+    // everything it does integrates the elapsed time, so doing it in decades
+    // gives the same forest for a twentieth of the work. During play it
+    // stays monthly, where the player can watch a tree grow.
+    this.ageWoodland(days, 720);
+    // Seeding is a per-day process, so the number of attempts scales with
+    // the days that went by rather than with the call.
+    const rounds = Math.min(8, Math.max(1, Math.round(days / 4)));
+    for (let i = 0; i < rounds; i++) this.spreadForest();
+  }
+
   private regrowNodes(): void {
     for (let i = this.regrowing.length - 1; i >= 0; i--) {
       const n = this.regrowing[i];
@@ -574,7 +620,7 @@ export class World {
   /** Called once after a fresh world is generated. */
   bootstrap(): void {
     this.seedVolcanoes();
-    this.seedNeighbours(false);
+    this.seedNeighbours(1);
     this.settle();
   }
 
@@ -680,11 +726,18 @@ export class World {
    * gets more: it is about to spend three centuries whittling them down, and a
    * history that ends with one survivor by arithmetic is not a history.
    */
-  seedNeighbours(crowded: boolean): void {
+  /**
+   * The other peoples of the world.
+   *
+   * `density` scales the number the world's own size supports: zero for a
+   * world nobody has reached yet, one for the usual spread, more for an age
+   * that has filled the map in. It is not a difficulty knob -- an older world
+   * is a more crowded one because people have had longer to spread out.
+   */
+  seedNeighbours(density: number): void {
+    if (density <= 0) return;
     const room = Math.round((this.terrain.worldSize / 420) * 3);
-    const count = crowded
-      ? Math.max(4, Math.min(8, room * 2))
-      : Math.max(2, Math.min(6, room));
+    const count = Math.max(1, Math.min(14, Math.round(room * density)));
     this.nations.seedForeignNations(this, count);
     // Every one of them arrives with a people and a faith of its own, built
     // out of the figures this world's sky happens to have in it.
@@ -715,6 +768,77 @@ export class World {
       { name: this.config.name, count: this.npcs.length },
       { notable: true, x: this.settlement.centre.x, z: this.settlement.centre.z },
     );
+  }
+
+  /**
+   * Set when the player's body has failed and the mode says that is final.
+   *
+   * The world is not torn down here. A hardcore death is a fact about the
+   * world, and the world keeps existing around it; what changes is that this
+   * save will not be resumed.
+   */
+  playerDied: { cause: string; day: number } | null = null;
+
+  /**
+   * Checks whether the person the player is has stopped.
+   *
+   * Nothing about this is a health bar hitting zero. It asks the same body
+   * every settler has whether it has failed, for the same three reasons a
+   * body fails: a wound, an infection, or simply going without for too long.
+   */
+  private checkPlayerSurvival(): void {
+    if (this.playerDied) return;
+    const rules = modeRules(this.config.mode);
+    if (!rules.mortal) return;
+    const cause = this.player.body.failure();
+    if (!cause) return;
+
+    this.log.add(this.time, 'settlement', 'ev.playerDied', {
+      name: this.player.name,
+      cause,
+    }, { notable: true, x: this.player.position.x, z: this.player.position.z });
+
+    if (!rules.permadeath) {
+      // Not a hardcore world: they come round, badly off, and the injuries
+      // that nearly finished them are still there.
+      this.player.body.treatEverything();
+      this.player.stats.hunger = Math.max(this.player.stats.hunger, 35);
+      this.player.stats.thirst = Math.max(this.player.stats.thirst, 35);
+      return;
+    }
+    this.playerDied = { cause, day: this.time.totalDays };
+  }
+
+  /**
+   * Whether anything in this world was arrived at by typing rather than by
+   * living. Written into the save and shown on the chronicle, because a
+   * history is only worth reading if it happened.
+   */
+  cheated = false;
+
+  markCheated(): void {
+    if (this.cheated) return;
+    this.cheated = true;
+    this.log.add(this.time, 'settlement', 'ev.cheatsUsed', undefined, { notable: true });
+  }
+
+  /**
+   * Changes the rules the world is running under.
+   *
+   * Only the console can reach this, which is the whole point: a mode is
+   * chosen at generation and lived with, and the console is the declared
+   * back door rather than a hidden one.
+   */
+  setMode(mode: GameMode): void {
+    if (this.config.mode === mode) return;
+    this.config.mode = mode;
+    this.log.add(this.time, 'settlement', 'ev.modeChanged', { mode }, { notable: true });
+  }
+
+  /** Moves the clock to a given hour of the day, keeping the date. */
+  setHourOfDay(hour: number): void {
+    const day = Math.floor(this.time.totalHours / 24);
+    this.time.totalHours = day * 24 + Math.max(0, Math.min(23.999, hour));
   }
 
   nextId(): number {
@@ -1178,6 +1302,17 @@ export class World {
     if (b.def.gathers === 'ore') {
       const vein = this.nearestVein(b.worldX, b.worldZ, 30);
       this.mineOre.set(b.id, oreItemsFor(vein));
+    }
+
+    // In a creative world the materials are not the point. The building is
+    // finished on the spot rather than conjured into existence half-built,
+    // which is what "no cost" has to mean for a thing that is normally a
+    // site with people carrying beams to it.
+    if (!modeRules(this.config.mode).payForBuilding) {
+      for (const m of b.missingMaterials()) b.siteStore.add(m.item, m.amount);
+      b.applyWork(1e9);
+      b.complete = true;
+      this.onBuildingCompleted(b);
     }
 
     this.log.add(this.time, 'construction', 'ev.blueprint', { name: b.defId }, {
@@ -1863,7 +1998,7 @@ export class World {
       const tz = this.rng.int(4, t.gridSize - 5);
       if (t.isWaterTile(tx, tz)) continue;
       const biome = t.biomeAtTile(tx, tz);
-      const options = speciesForBiome(biome);
+      const options = speciesForBiome(biome, eraProfile(this.config.era).life);
       if (options.length === 0) continue;
       const species = this.rng.pick(options);
       const def = ANIMALS[species];
@@ -1993,6 +2128,19 @@ export class World {
     this.updateThrown(dt / Math.max(1, this.time.speed as number));
     this.karst.update(this, hours / 24);
     updateVolcanoes(this, dt);
+
+    // The person the player is. They eat, drink and get cold on the same
+    // clock as everybody else; a creative or god world simply has nobody in
+    // it who can starve.
+    if (modeRules(this.config.mode).mortal) {
+      const p = this.player;
+      const exertion = clamp01(p.speed / 6) * 0.7 + (p.busyAction ? 0.3 : 0);
+      // How hard the weather is working on them: comfortable is about 18C,
+      // and either side of that costs water one way or the other.
+      const heat = clamp((this.weather.temperature - 18) / 20, -1, 1);
+      p.advanceNeeds(hours, exertion, heat, this.rng);
+      this.checkPlayerSurvival();
+    }
 
     // Crops.
     this.growCrops(hours);
@@ -2148,9 +2296,18 @@ export class World {
     this.rollDailyEvent();
   }
 
-  /** Woodland reseeds into open ground near surviving trees. */
+  /**
+   * Woodland reseeds into open ground near surviving trees.
+   *
+   * The list of trees that can seed used to be rebuilt from scratch every
+   * simulated day -- a filter and an allocation over every node in the world,
+   * tens of thousands of them, three hundred and sixty-five times a year.
+   * That was the single largest cost in the game and the reason a long time
+   * skip crawled. It is the same list on the next day as it was on this one,
+   * so it is now kept and refreshed when the woodland has actually changed.
+   */
   private spreadForest(): void {
-    const trees = this.nodes.filter((n) => !n.depleted && RESOURCES[n.kind].spreads && RESOURCES[n.kind].category === 'tree');
+    const trees = this.seedingTrees();
     if (trees.length === 0) return;
     const attempts = Math.min(28, Math.ceil(trees.length * 0.02));
     for (let i = 0; i < attempts; i++) {

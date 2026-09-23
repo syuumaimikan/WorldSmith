@@ -51,6 +51,8 @@ export function serializeWorld(world: World, id: string): SaveData {
       y: world.player.position.y,
       z: world.player.position.z,
       yaw: world.player.yaw,
+      name: world.player.name,
+      body: world.player.body.serialize(),
       stats: { ...world.player.stats },
       inventory: world.player.inventory.serialize(),
       quickSlots: world.player.quickSlots,
@@ -136,6 +138,8 @@ export function deserializeWorld(data: SaveData): World {
   world.player.position.set(data.player.x, data.player.y, data.player.z);
   world.player.yaw = data.player.yaw;
   Object.assign(world.player.stats, data.player.stats);
+  if (typeof data.player.name === 'string') world.player.name = data.player.name;
+  if (data.player.body) world.player.body.restore(data.player.body);
   const inv = Inventory.deserialize(data.player.inventory, world.player.inventory.weightLimit);
   world.player.inventory.slots.length = 0;
   for (const s of inv.slots) world.player.inventory.slots.push(s);

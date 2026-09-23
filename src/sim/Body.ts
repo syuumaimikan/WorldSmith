@@ -259,6 +259,24 @@ export class Body {
     return null;
   }
 
+  /**
+   * Pulls a body back from the edge without undoing what happened to it.
+   *
+   * Used when a world's rules say death is not final. What it does is what
+   * actually saves somebody: the infections are beaten and the worst wounds
+   * are dressed and stop getting worse. The injuries are still there and
+   * still cost mobility, and the wasting still has to be eaten back.
+   */
+  treatEverything(): void {
+    for (const inj of this.injuries) {
+      inj.infection = 0;
+      inj.treated = true;
+      inj.severity = Math.min(inj.severity, 0.72);
+    }
+    this.wasting = Math.min(this.wasting, 0.7);
+    this.sickness = 0;
+  }
+
   // ----------------------------------------------------------- persistence
 
   serialize(): SerializedBody {

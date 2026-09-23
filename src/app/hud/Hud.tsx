@@ -38,6 +38,7 @@ export type PanelId =
   | 'chronicle'
   | 'skip'
   | 'store'
+  | 'console'
   | 'menu';
 
 interface Props {
@@ -122,6 +123,8 @@ export function Hud({
         <div className="panel stat-bars">
           <StatBar label={t('hud.condition')} value={player.condition / 100} color={PALETTE.ui.bad} />
           <StatBar label={t('hud.stamina')} value={player.stats.stamina / 100} color={PALETTE.ui.good} />
+          <StatBar label={t('hud.hunger')} value={player.stats.hunger / 100} color={PALETTE.ui.warn} />
+          <StatBar label={t('hud.thirst')} value={player.stats.thirst / 100} color={0x4ea8d8} />
           <StatBar label={t('hud.pack')} value={player.carriedWeightFraction()} color={PALETTE.ui.warn} />
         </div>
 

@@ -5,9 +5,12 @@ import {
   Difficulty,
   WorldSizePreset,
   WorldEra,
+  GameMode,
   WORLD_SIZE_TILES,
   TILE_SIZE,
 } from '../../world/types';
+import { WORLD_ERAS } from '../../world/eras';
+import { GAME_MODES } from '../../world/modes';
 import { useT } from '../../i18n';
 
 interface Props {
@@ -18,7 +21,13 @@ interface Props {
 const SIZES: WorldSizePreset[] = ['small', 'medium', 'large'];
 const CLIMATES: ClimatePreset[] = ['temperate', 'cold', 'warm', 'arid'];
 const DIFFICULTIES: Difficulty[] = ['relaxed', 'normal', 'harsh'];
-const ERAS: WorldEra[] = ['fresh', 'ancient'];
+const ERAS: WorldEra[] = WORLD_ERAS;
+const MODES: GameMode[] = GAME_MODES;
+
+const PLAYER_NAMES = [
+  'Wayfarer', 'Aldis', 'Bran', 'Cerrin', 'Dara', 'Eirik', 'Fen', 'Gwen',
+  'Halli', 'Ida', 'Joran', 'Kestrel', 'Lira', 'Maeve', 'Nial', 'Orin',
+];
 
 const NAME_SUGGESTIONS = [
   'Newholt', 'Ashford', 'Greyvale', 'Brackwater', 'Elderfell', 'Stonereach',
@@ -36,7 +45,11 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
   const [resourceDensity, setResourceDensity] = useState(1);
   const [settlers, setSettlers] = useState(6);
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
-  const [era, setEra] = useState<WorldEra>('fresh');
+  const [era, setEra] = useState<WorldEra>('prehistory');
+  const [mode, setMode] = useState<GameMode>('survival');
+  const [playerName, setPlayerName] = useState(
+    () => PLAYER_NAMES[Math.floor(Math.random() * PLAYER_NAMES.length)],
+  );
 
   const submit = (): void => {
     onCreate({
@@ -48,6 +61,8 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
       startingSettlers: settlers,
       difficulty,
       era,
+      mode,
+      playerName,
     });
   };
 
@@ -62,6 +77,18 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
       <div className="panel form-card">
         <h2>{t('new.found')}</h2>
         <div className="hint">{t('new.hint')}</div>
+
+        <div className="field">
+          <label htmlFor="player-name">{t('new.playerName')}</label>
+          <input
+            id="player-name"
+            type="text"
+            value={playerName}
+            maxLength={32}
+            onChange={(e) => setPlayerName(e.target.value)}
+          />
+          <div className="hint">{t('new.playerName.note')}</div>
+        </div>
 
         <div className="two-col">
           <div className="field">
@@ -120,7 +147,7 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
 
         <div className="field">
           <label>{t('new.era')}</label>
-          <div className="choice-row">
+          <div className="choice-row wrap">
             {ERAS.map((e) => (
               <button
                 key={e}
@@ -132,6 +159,24 @@ export function NewWorldScreen({ onCancel, onCreate }: Props): JSX.Element {
               </button>
             ))}
           </div>
+          <div className="hint">{t('new.era.hint')}</div>
+        </div>
+
+        <div className="field">
+          <label>{t('new.mode')}</label>
+          <div className="choice-row wrap">
+            {MODES.map((m) => (
+              <button
+                key={m}
+                className={`choice ${mode === m ? 'active' : ''}`}
+                onClick={() => setMode(m)}
+              >
+                {t(`new.mode.${m}`)}
+                <small>{t(`new.mode.${m}.note`)}</small>
+              </button>
+            ))}
+          </div>
+          <div className="hint">{t('new.mode.hint')}</div>
         </div>
 
         <div className="two-col">

@@ -21,6 +21,7 @@ import { Terrain } from '../world/Terrain';
 import { Biome } from '../world/types';
 import type { Namer } from './Naming';
 import type { World } from './World';
+import { eraProfile } from '../world/eras';
 
 export type Government =
   | 'chiefdom'
@@ -151,6 +152,14 @@ export interface Nation {
   leader: Leader;
   /** True for the polity the player's settlement belongs to. */
   isPlayer: boolean;
+  /**
+   * True for the country the player was born a subject of.
+   *
+   * Different from `isPlayer`, and deliberately so: this nation is not the
+   * player's to command. It is simply where they live, and it will go on
+   * making its own decisions about war, law and taxes around them.
+   */
+  isPlayerHome?: boolean;
   /** Capital, in world metres. */
   x: number;
   z: number;
@@ -212,6 +221,14 @@ export class NationSystem {
   readonly nations: Nation[] = [];
   /** Which nation claims each cell, or 0 for unclaimed. */
   readonly claims: Uint8Array;
+
+  /**
+   * Bumped whenever the claim map may have changed.
+   *
+   * Derived figures -- how many people a nation's land will feed, chiefly --
+   * are recomputed against this rather than on every question.
+   */
+  private claimRevision = 0;
   readonly cells = CLAIM_CELLS;
   readonly cellSize: number;
 
@@ -236,8 +253,38 @@ export class NationSystem {
   // =======================================================================
 
   /** The player's people become a polity in their own right. */
+  /**
+   * The player's place in the political map.
+   *
+   * In an early world they are founding something: their settlement is a new
+   * polity and the map gains a colour. In a later one they are not. Somebody
+   * already rules this valley and has done for centuries, and the honest
+   * thing -- the thing the player actually asked for, to live in this world
+   * rather than to manage it -- is for their village to be a village *in*
+   * that kingdom, listed among its towns, inside its borders, subject to its
+   * laws.
+   */
   foundPlayerNation(world: World): Nation {
     const centre = world.settlement.centre;
+    if (eraProfile(world.config.era).bornIntoNation) {
+      const host = this.hostFor(centre.x, centre.z);
+      if (host) {
+        host.isPlayerHome = true;
+        const town = this.foundTown(world, host, false) ?? this.placeTownAt(world, host, centre.x, centre.z);
+        if (town) {
+          town.x = centre.x;
+          town.z = centre.z;
+          town.name = world.config.name;
+          town.population = Math.max(town.population, world.npcs.length);
+        }
+        world.log.add(world.time, 'settlement', 'ev.bornSubject', { nation: host.name }, {
+          notable: true,
+          x: centre.x,
+          z: centre.z,
+        });
+        return host;
+      }
+    }
     const nation = this.makeNation(
       world.config.name,
       centre.x,
@@ -264,6 +311,45 @@ export class NationSystem {
       });
     }
     return nation;
+  }
+
+  /**
+   * Whose ground the player's settlement is standing on.
+   *
+   * Whoever actually claims it; failing that, whoever is nearest, because a
+   * kingdom's writ runs further than its painted border and somebody always
+   * says the valley is theirs.
+   */
+  private hostFor(x: number, z: number): Nation | null {
+    const owner = this.nationAt(x, z);
+    if (owner && !owner.isPlayer) return owner;
+    let best: Nation | null = null;
+    let bestD = Infinity;
+    for (const n of this.nations) {
+      if (n.isPlayer) continue;
+      const d = Math.hypot(n.x - x, n.z - z);
+      if (d >= bestD) continue;
+      bestD = d;
+      best = n;
+    }
+    return best;
+  }
+
+  /** Puts a town at an exact spot, for when the place is already decided. */
+  private placeTownAt(world: World, nation: Nation, x: number, z: number): Town {
+    const town: Town = {
+      id: this.nextId++,
+      name: world.config.name,
+      nationId: nation.id,
+      x,
+      z,
+      population: Math.max(20, world.npcs.length),
+      foundedDay: world.time.totalDays,
+      isCapital: false,
+      ruined: false,
+    };
+    nation.towns.push(town);
+    return town;
   }
 
   /**
@@ -602,6 +688,10 @@ export class NationSystem {
     const days = this.pending / 24;
     this.pending = 0;
 
+    // What each nation's ground will feed, once, for everybody.
+    this.claimRevision++;
+    this.refreshCapacities(world);
+
     for (const nation of [...this.nations]) {
       this.updateNation(world, nation, days);
     }
@@ -914,20 +1004,52 @@ export class NationSystem {
    * with land is most of the answer: the same valley that supports a thousand
    * with stone tools supports nearly twice that once they can work iron.
    */
-  private carryingCapacity(world: World, nation: Nation): number {
-    let quality = 0;
+  /**
+   * How many people each nation's ground will feed.
+   *
+   * Worked out for everybody in one pass over the claim map rather than one
+   * pass per nation per question. It used to be asked three times per nation
+   * per step and answered each time by walking the whole map, which over
+   * seven centuries came to tens of millions of cells looked at to learn
+   * something that changes only when a border moves.
+   */
+  private capacityCache = new Map<number, number>();
+  private capacityStamp = -1;
+
+  private refreshCapacities(world: World): void {
+    if (this.capacityStamp === this.claimRevision) return;
+    this.capacityStamp = this.claimRevision;
+    this.capacityCache.clear();
+
     const t = this.terrain;
+    const quality = new Map<number, number>();
     for (let i = 0; i < this.claims.length; i++) {
-      if (this.claims[i] !== nation.id) continue;
+      const owner = this.claims[i];
+      if (owner === 0) continue;
       const cx = i % CLAIM_CELLS;
       const cz = Math.floor(i / CLAIM_CELLS);
       const ti = t.index(
         t.tileX((cx + 0.5) * this.cellSize),
         t.tileZ((cz + 0.5) * this.cellSize),
       );
-      quality += 0.35 + t.data.fertility[ti];
+      quality.set(owner, (quality.get(owner) ?? 0) + 0.35 + t.data.fertility[ti]);
     }
-    return Math.max(24, quality * PEOPLE_PER_CELL * world.technology.eraOf(world, nation).carrying);
+    for (const nation of this.nations) {
+      const q = quality.get(nation.id) ?? 0;
+      this.capacityCache.set(
+        nation.id,
+        Math.max(24, q * PEOPLE_PER_CELL * world.technology.eraOf(world, nation).carrying),
+      );
+    }
+  }
+
+  private carryingCapacity(world: World, nation: Nation): number {
+    this.refreshCapacities(world);
+    const cached = this.capacityCache.get(nation.id);
+    if (cached !== undefined) return cached;
+    // A nation that came into being since the last pass has no cached
+    // figure yet; it gets the floor until the next border change.
+    return 24;
   }
 
   /**

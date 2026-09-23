@@ -32,13 +32,30 @@ export interface Obstacle {
 export type ObstacleQuery = (x: number, z: number, radius: number, out: Obstacle[]) => void;
 
 export interface PlayerStats {
-  health: number;
-  maxHealth: number;
   stamina: number;
   maxStamina: number;
+  /** How well fed, 0..100. Zero is not dead; zero is going without. */
   hunger: number;
+  /**
+   * How watered, 0..100.
+   *
+   * Kept separate from hunger because it is a different clock. A person can
+   * go a month without food and three days without water, so thirst runs
+   * about eight times as fast and is what will actually kill you first in a
+   * dry country.
+   */
+  thirst: number;
   warmth: number;
 }
+
+/**
+ * Game hours to go from full to empty doing nothing in particular.
+ *
+ * Both are generous by real standards, because the game's day is twenty real
+ * minutes and a realistic fast would be a week of play spent watching a bar.
+ */
+const HOURS_TO_STARVE = 24 * 3;
+const HOURS_TO_PARCH = 24 * 0.9;
 
 export class Player {
   readonly position = new Vector3();
@@ -80,17 +97,69 @@ export class Player {
    * is nothing here to damage directly.
    */
   get condition(): number {
-    return Math.round(this.body.condition * (0.55 + clamp01(this.stats.hunger / 100) * 0.45));
+    const fed = clamp01(this.stats.hunger / 100);
+    const watered = clamp01(this.stats.thirst / 100);
+    // Thirst bites harder and sooner than hunger, which is why it is weighted
+    // more heavily here than the larger number might suggest.
+    return Math.round(this.body.condition * (0.42 + fed * 0.26 + watered * 0.32));
+  }
+
+  /**
+   * A day of being alive.
+   *
+   * Called with elapsed game hours. `exertion` is 0 for standing still and 1
+   * for running uphill with a full pack; `heat` is how hard the weather is
+   * working on them, -1 for freezing and 1 for baking, both of which cost
+   * water. Nothing here is a timer: what it does is push the same `Body`
+   * every settler has, so going without wastes the player exactly as it
+   * wastes everybody else.
+   */
+  advanceNeeds(hours: number, exertion: number, heat: number, rng: { next(): number }): void {
+    if (hours <= 0) return;
+    const work = 1 + clamp01(exertion) * 0.85;
+    // Sweating in the heat, and burning fuel to stay warm in the cold.
+    const sweat = 1 + Math.max(0, heat) * 1.1;
+    const shiver = 1 + Math.max(0, -heat) * 0.6;
+
+    this.stats.hunger = clamp(
+      this.stats.hunger - (hours / HOURS_TO_STARVE) * 100 * work * shiver,
+      0,
+      100,
+    );
+    this.stats.thirst = clamp(
+      this.stats.thirst - (hours / HOURS_TO_PARCH) * 100 * work * sweat,
+      0,
+      100,
+    );
+    this.stats.warmth = clamp(this.stats.warmth + (50 - heat * 50 - this.stats.warmth) * 0.05, 0, 100);
+
+    // Going without does not subtract from a health bar, because there is no
+    // health bar. It wastes the body, which is a thing that takes weeks to
+    // come back from and that a meal does not instantly undo.
+    const fed = clamp01(this.stats.hunger / 100);
+    const watered = clamp01(this.stats.thirst / 100);
+    if (fed < 0.25) this.body.starve((0.25 - fed) * hours * 0.02);
+    if (watered < 0.25) this.body.starve((0.25 - watered) * hours * 0.09);
+    this.body.advance(hours / 24, fed, 0.3, rng as never);
+  }
+
+  /** Drinks whatever is in front of them. Returns how much good it did. */
+  drink(quality = 1): number {
+    const before = this.stats.thirst;
+    this.stats.thirst = clamp(this.stats.thirst + 62 * quality, 0, 100);
+    return this.stats.thirst - before;
   }
 
   stats: PlayerStats = {
-    health: 100,
-    maxHealth: 100,
     stamina: 100,
     maxStamina: 100,
     hunger: 100,
+    thirst: 100,
     warmth: 100,
   };
+
+  /** What this person is called. The player chose it at world generation. */
+  name = 'Wayfarer';
 
   /** Set while the player is performing a timed action such as chopping. */
   busyAction: 'chop' | 'mine' | 'build' | 'farm' | 'forage' | null = null;
@@ -272,7 +341,9 @@ export class Player {
       y: this.position.y,
       z: this.position.z,
       yaw: this.yaw,
+      name: this.name,
       stats: this.stats,
+      body: this.body.serialize(),
       inventory: this.inventory.serialize(),
       quickSlots: this.quickSlots,
     };

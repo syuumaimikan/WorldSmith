@@ -1,5 +1,8 @@
 /** Shared world-layer types. Kept dependency-free so workers can import them. */
 
+import type { WorldEra } from './eras';
+import type { GameMode } from './modes';
+
 export enum Biome {
   Ocean = 0,
   Lake = 1,
@@ -41,12 +44,10 @@ export function isWaterBiome(b: Biome): boolean {
 export type ClimatePreset = 'temperate' | 'cold' | 'warm' | 'arid';
 export type WorldSizePreset = 'small' | 'medium' | 'large';
 export type Difficulty = 'relaxed' | 'normal' | 'harsh';
-/**
- * How much history the world already has when the player arrives. An
- * ancient world is run forward through centuries of simulated settlement
- * before play begins, leaving ruins, old roads and named places behind.
- */
-export type WorldEra = 'fresh' | 'ancient';
+// The world's age, and the rules you are playing under. Both are decided at
+// generation and both live in the config from then on; see `eras.ts` and
+// `modes.ts` for what each one means.
+export type { WorldEra, GameMode };
 
 export interface WorldConfig {
   name: string;
@@ -63,6 +64,9 @@ export interface WorldConfig {
   startingSettlers: number;
   difficulty: Difficulty;
   era: WorldEra;
+  mode: GameMode;
+  /** What the person playing is called. Theirs to choose, and theirs alone. */
+  playerName: string;
 }
 
 /**
@@ -72,12 +76,23 @@ export interface WorldConfig {
  * cost of the extra ground is paid in generation time rather than in frames.
  */
 export const WORLD_SIZE_TILES: Record<WorldSizePreset, number> = {
-  small: 512,
-  medium: 768,
-  large: 1024,
+  small: 640,
+  medium: 1024,
+  large: 1440,
 };
 
-export const TILE_SIZE = 2;
+/**
+ * Metres per tile.
+ *
+ * Raised from two to three along with the grid sizes above, which together
+ * take a large world from two kilometres across to four and a bit -- four and
+ * a half times the ground for twice the tiles. Two metres was finer than
+ * anything in the world needed: the terrain's own detail is generated at
+ * metre-relative frequencies, so a three-metre sample still catches every
+ * shape that is there, and the extra kilometre is worth more than the extra
+ * sample.
+ */
+export const TILE_SIZE = 3;
 
 /** Heightmap + climate + biome layers. All arrays are gridSize*gridSize. */
 export interface TerrainData {

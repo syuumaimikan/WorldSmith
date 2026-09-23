@@ -18,7 +18,9 @@ export function buildAnimalGeometry(species: AnimalSpecies, lod: 0 | 1 = 0): Buf
   const body = def.colour;
   const belly = def.bellyColour;
 
-  if (species === 'bird') {
+  const build = def.build ?? 'standard';
+
+  if (build === 'flyer' || species === 'bird') {
     // Birds are tiny; a body, two wings and a beak is plenty at any distance.
     b.box(0.22, 0.16, 0.34, body, { y: 0 });
     b.box(0.5, 0.03, 0.18, shade(body, 1.15), { y: 0.03, rz: 0.12 });
@@ -27,10 +29,19 @@ export function buildAnimalGeometry(species: AnimalSpecies, lod: 0 | 1 = 0): Buf
     return b.build();
   }
 
+  if (build === 'sprawling') {
+    buildSprawler(b, rng, lod, s, body, belly, species);
+    return b.build();
+  }
+
   const bodyLen = 1.05 * s;
-  const bodyH = 0.44 * s;
-  const bodyW = 0.42 * s;
-  const legLen = 0.5 * s;
+  // A heavy build is not a big deer. It is deeper through the chest, shorter
+  // in the leg for its bulk, and carries its head low, which is most of why
+  // an aurochs and a mammoth read as heavy at any distance.
+  const heavy = build === 'heavy';
+  const bodyH = (heavy ? 0.62 : 0.44) * s;
+  const bodyW = (heavy ? 0.58 : 0.42) * s;
+  const legLen = (heavy ? 0.42 : 0.5) * s;
   const legY = legLen / 2;
 
   // Torso, slightly tapered by using two boxes.
@@ -56,7 +67,7 @@ export function buildAnimalGeometry(species: AnimalSpecies, lod: 0 | 1 = 0): Buf
   // Neck and head.
   const neckY = legLen + bodyH * 0.9;
   const headZ = bodyLen * 0.5;
-  const upright = species === 'deer' || species === 'sheep';
+  const upright = species === 'deer' || species === 'sheep' || species === 'horse';
   if (upright) {
     b.box(0.2 * s, 0.42 * s, 0.2 * s, body, { x: 0, y: neckY + 0.16 * s, z: headZ - 0.06 * s, rx: -0.3 });
     b.box(0.26 * s, 0.26 * s, 0.4 * s, body, { y: neckY + 0.38 * s, z: headZ + 0.12 * s });
@@ -109,6 +120,74 @@ export function buildAnimalGeometry(species: AnimalSpecies, lod: 0 | 1 = 0): Buf
     b.box(bodyW * 0.7, bodyH * 0.4, 0.06 * s, belly, { y: legLen + bodyH * 0.6, z: -bodyLen * 0.5 });
   }
 
+  if (build === 'heavy') {
+    // Woolly coat, which is half of what a mammoth is.
+    if (species === 'mammoth') {
+      for (let i = 0; i < (lod === 0 ? 8 : 4); i++) {
+        b.blob(0.3 * s, 0, shade(body, rng.range(0.86, 1.1)), {
+          x: rng.range(-0.3, 0.3) * s,
+          y: legLen + bodyH * rng.range(0.55, 1.05),
+          z: rng.range(-0.5, 0.5) * s,
+          sy: 0.85,
+        });
+      }
+      // The trunk: three segments, each narrower and hanging further.
+      let ty = neckY - 0.1 * s;
+      let tz = headZ + 0.34 * s;
+      for (let i = 0; i < 3; i++) {
+        const r = (0.13 - i * 0.03) * s;
+        b.cylinder(r, r * 1.3, 0.34 * s, 5, shade(body, 0.88), {
+          y: ty,
+          z: tz,
+          rx: 0.9 + i * 0.35,
+        });
+        ty -= 0.26 * s;
+        tz += 0.1 * s;
+      }
+      // Tusks, curving out and forward.
+      for (const side of [1, -1]) {
+        b.cylinder(0.04 * s, 0.07 * s, 0.85 * s, 5, 0xe4dcc4, {
+          x: side * 0.2 * s,
+          y: neckY - 0.12 * s,
+          z: headZ + 0.5 * s,
+          rx: 1.15,
+          rz: side * 0.28,
+        });
+        b.cylinder(0.03 * s, 0.05 * s, 0.4 * s, 5, 0xe4dcc4, {
+          x: side * 0.3 * s,
+          y: neckY - 0.3 * s,
+          z: headZ + 0.9 * s,
+          rx: 2.1,
+          rz: side * 0.3,
+        });
+      }
+    }
+    if (species === 'aurochs') {
+      // Forward-curving horns and the ridge over the shoulders.
+      for (const side of [1, -1]) {
+        b.cylinder(0.04 * s, 0.07 * s, 0.5 * s, 5, 0x2b2620, {
+          x: side * 0.18 * s,
+          y: neckY + 0.3 * s,
+          z: headZ,
+          rz: side * 1.1,
+        });
+        b.cylinder(0.035 * s, 0.05 * s, 0.34 * s, 5, 0x2b2620, {
+          x: side * 0.44 * s,
+          y: neckY + 0.4 * s,
+          z: headZ + 0.14 * s,
+          rx: -0.9,
+          rz: side * 0.6,
+        });
+      }
+      b.blob(0.34 * s, 0, shade(body, 0.86), { y: legLen + bodyH * 1.02, z: bodyLen * 0.2, sy: 0.6 });
+    }
+    if (species === 'bear') {
+      // A bear's shoulder hump and a short blunt muzzle.
+      b.blob(0.3 * s, 0, shade(body, 0.92), { y: legLen + bodyH * 1.0, z: bodyLen * 0.24, sy: 0.7 });
+      b.box(0.2 * s, 0.17 * s, 0.22 * s, shade(body, 0.74), { y: neckY - 0.08 * s, z: headZ + 0.36 * s });
+    }
+  }
+
   if (species === 'boar') {
     b.box(0.06 * s, 0.05 * s, 0.14 * s, 0xe8e0cc, { x: 0.09 * s, y: neckY - 0.06 * s, z: headZ + 0.36 * s, rx: -0.5 });
     b.box(0.06 * s, 0.05 * s, 0.14 * s, 0xe8e0cc, { x: -0.09 * s, y: neckY - 0.06 * s, z: headZ + 0.36 * s, rx: -0.5 });
@@ -154,4 +233,108 @@ export function buildAnimalGeometry(species: AnimalSpecies, lod: 0 | 1 = 0): Buf
   }
 
   return b.build();
+}
+
+
+/**
+ * A creature that lies between its legs rather than standing on them.
+ *
+ * Sprawling posture is the single most recognisable thing about an amphibian
+ * or an early reptile: the belly is nearly on the ground, the elbows and
+ * knees stick out sideways, and the whole animal is longer and flatter than
+ * anything with an upright gait. Drawing one as a short-legged quadruped
+ * gets a dachshund; this gets a labyrinthodont.
+ */
+function buildSprawler(
+  b: GeoBuilder,
+  rng: Rng,
+  lod: 0 | 1,
+  s: number,
+  body: number,
+  belly: number,
+  species: AnimalSpecies,
+): void {
+  const len = 1.5 * s;
+  const h = 0.3 * s;
+  const w = 0.5 * s;
+  const y = 0.2 * s;
+
+  b.box(w, h, len, body, { y: y + h / 2 });
+  b.box(w * 0.94, h * 0.5, len * 0.86, belly, { y: y + h * 0.26 });
+
+  // Legs out to the side, foot below and beyond the shoulder.
+  for (const side of [1, -1]) {
+    for (const z of [len * 0.3, -len * 0.3]) {
+      b.box(0.3 * s, 0.09 * s, 0.11 * s, shade(body, 0.85), {
+        x: side * w * 0.66,
+        y: y + h * 0.35,
+        z,
+        rz: side * 0.55,
+      });
+      b.box(0.1 * s, y + h * 0.3, 0.13 * s, shade(body, 0.72), {
+        x: side * w * 0.95,
+        y: (y + h * 0.3) / 2,
+        z,
+      });
+      // A splayed foot, which is what the animal actually stands on.
+      b.box(0.2 * s, 0.05 * s, 0.22 * s, shade(body, 0.62), { x: side * w * 1.02, y: 0.03 * s, z });
+    }
+  }
+
+  // A broad flat skull, wider than the neck, set low and forward.
+  const headZ = len * 0.56;
+  b.box(w * 1.12, h * 0.62, 0.46 * s, body, { y: y + h * 0.5, z: headZ });
+  b.box(w * 0.8, h * 0.3, 0.2 * s, shade(body, 0.76), { y: y + h * 0.42, z: headZ + 0.3 * s });
+  if (lod === 0) {
+    for (const side of [1, -1]) {
+      // Eyes on top of the head rather than the sides: it watches from the
+      // waterline.
+      b.box(0.07 * s, 0.05 * s, 0.07 * s, 0x14141a, {
+        x: side * w * 0.34,
+        y: y + h * 0.82,
+        z: headZ - 0.04 * s,
+      });
+    }
+  }
+
+  // A long tapering tail, which is half the animal.
+  const segs = lod === 0 ? 4 : 2;
+  for (let i = 0; i < segs; i++) {
+    const f = i / segs;
+    b.box(w * (0.7 - f * 0.5), h * (0.8 - f * 0.55), len * 0.3, shade(body, 0.9 - f * 0.12), {
+      y: y + h * 0.45,
+      z: -len * (0.5 + f * 0.3),
+    });
+  }
+
+  if (species === 'sail_lizard') {
+    // The sail. Spines rising off the backbone with skin between them, which
+    // is the entire reason anyone recognises this animal.
+    const spines = lod === 0 ? 9 : 5;
+    for (let i = 0; i < spines; i++) {
+      const f = i / (spines - 1);
+      const z = len * (0.4 - f * 0.9);
+      // Tallest over the hips, tapering both ways, like the real thing.
+      const sail = Math.sin(f * Math.PI) * 1.05 * s + 0.12 * s;
+      b.box(0.05 * s, sail, 0.07 * s, shade(body, 0.86), { y: y + h + sail / 2, z });
+      if (i > 0) {
+        b.box(0.03 * s, sail * 0.9, len * 0.11, shade(belly, 1.04), {
+          y: y + h + sail * 0.45,
+          z: z + len * 0.055,
+        });
+      }
+    }
+  }
+
+  if (species === 'labyrinthodont' && lod === 0) {
+    // Mottling, because a thing that lies in a swamp is not one colour.
+    for (let i = 0; i < 6; i++) {
+      b.blob(rng.range(0.07, 0.14) * s, 0, shade(body, 0.74), {
+        x: rng.range(-0.35, 0.35) * w,
+        y: y + h * 0.95,
+        z: rng.range(-0.5, 0.5) * len,
+        sy: 0.4,
+      });
+    }
+  }
 }
