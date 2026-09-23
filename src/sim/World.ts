@@ -68,6 +68,7 @@ import { Inventory } from './Inventory';
 import { modeRules } from '../world/modes';
 import type { GameMode } from '../world/modes';
 import { eraProfile } from '../world/eras';
+import { fireModEvent, ModCounters } from '../mods/ModRuntime';
 
 export interface HarvestResult {
   items: { item: ItemId; amount: number }[];
@@ -109,6 +110,15 @@ export class World {
   readonly piles: ItemPile[] = [];
   readonly pileById = new Map<number, ItemPile>();
   readonly pileGrid = new SpatialGrid<ItemPile>(10);
+
+  /**
+   * What the mods remember.
+   *
+   * One flat map of numbers belonging to the world and saved with it, which
+   * is enough to build a tally, a quest or a reputation out of, and small
+   * enough that a mod cannot use it to hold the world hostage.
+   */
+  readonly modCounters = new ModCounters();
 
   /** Things somebody has thrown and that have not landed yet. */
   readonly thrown: ThrownItem[] = [];
@@ -236,6 +246,7 @@ export class World {
     this.player.placeOnGround(terrain);
 
     this.time.onNewDay.push((day) => this.onNewDay(day));
+    this.time.onNewSeason.push((season) => fireModEvent(this, { kind: 'season', season }));
     this.watchLog();
   }
 
@@ -944,6 +955,9 @@ export class World {
     }
 
     for (const it of result.items) this.economy.recordProduction(it.item, it.amount);
+    // Mods listen to the places the simulation already has, rather than
+    // being called every frame and asked to work out what changed.
+    if (result.completedUnit) fireModEvent(this, { kind: 'harvest', block: node.kind });
     return result;
   }
 
@@ -2291,9 +2305,17 @@ export class World {
       }
     }
 
+    // The settlement makes up its own mind about what to raise next and what
+    // to study, on the same day-scale it always did -- but now while somebody
+    // is watching, not only during a skipped century. The work itself is
+    // still done by people with legs.
+    this.development.decide(this);
+
     this.economy.rollDay(this.buildings);
     this.maybeSpawnMigrant();
     this.rollDailyEvent();
+    fireModEvent(this, { kind: 'day' });
+    if (day > 0 && day % DAYS_PER_YEAR === 0) fireModEvent(this, { kind: 'year' });
   }
 
   /**
@@ -2534,6 +2556,7 @@ export class World {
     this.weather.driveFrom(this.climate, ob.x, ob.z, hours);
     if (this.weather.justChanged) {
       this.log.add(this.time, 'weather', 'ev.weatherTurns', { weather: this.weather.current });
+      fireModEvent(this, { kind: 'weather', weather: this.weather.current });
     }
   }
 

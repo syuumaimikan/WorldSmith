@@ -1755,3 +1755,42 @@ button.mini.primary {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 13px;
 }
+
+/* ------------------------------------------------------------------ mods
+   A row per mod: what it is on the left, the switch on the right. */
+.mod-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 8px;
+}
+
+.mod-name {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.mod-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.tiny.bad {
+  color: #e0827a;
+}
+
+/* ----------------------------------------------------------------- guide
+   Prose, for the part of the manual a table cannot say. */
+.guide-para {
+  margin: 0 0 12px;
+  line-height: 1.75;
+  color: var(--text-dim, #b8bcc6);
+  max-width: 68ch;
+}

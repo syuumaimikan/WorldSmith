@@ -39,6 +39,8 @@ export type PanelId =
   | 'skip'
   | 'store'
   | 'console'
+  | 'mods'
+  | 'guide'
   | 'menu';
 
 interface Props {
@@ -194,6 +196,8 @@ export function Hud({
           <ToolButton label={t('hud.sky')} hotkey="N" active={panel === 'sky'} onClick={() => onOpenPanel('sky')} />
           <ToolButton label={t('hud.nation')} hotkey="L" active={panel === 'nation'} onClick={() => onOpenPanel('nation')} />
           <ToolButton label={t('hud.chronicle')} hotkey="" active={panel === 'chronicle'} onClick={() => onOpenPanel('chronicle')} />
+          <ToolButton label={t('hud.mods')} hotkey="" active={panel === 'mods'} onClick={() => onOpenPanel('mods')} />
+          <ToolButton label={t('hud.guide')} hotkey="F1" active={panel === 'guide'} onClick={() => onOpenPanel('guide')} />
         </div>
         <div className="tiny muted mono" style={{ textAlign: 'right' }}>
           {t('overlay.' + game.overlay)} · O

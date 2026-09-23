@@ -114,9 +114,52 @@ export class Development {
     this.study(world, days);
     this.keepTheRoofsOn(world, hands, days);
     this.pushOnWithBuilding(world, hands, days);
-    this.startSomethingIfIdle(world);
+    this.decide(world);
     this.breakGround(world, hands, days);
     this.abandonHopelessSites(world);
+  }
+
+  /**
+   * The settlement making up its own mind, while people are watching.
+   *
+   * This is the decisions and none of the work. Choosing to raise a
+   * storehouse and choosing what to spend the winter reading are things a
+   * settlement does for itself; carrying the timber is not, and during a
+   * played day it is carried by somebody with legs.
+   *
+   * Without this the player was the settlement's only source of intent --
+   * nothing was ever built unless they placed it, nothing was ever studied
+   * unless they picked it -- which makes them the manager of the place rather
+   * than one of the people living in it.
+   */
+  decide(world: World): void {
+    if (this.labour(world) <= 0) return;
+    this.chooseStudy(world);
+    this.startSomethingIfIdle(world);
+    this.abandonHopelessSites(world);
+  }
+
+  /**
+   * What the scholars turn to next, if nobody has told them.
+   *
+   * Only ever fills an empty slot. A topic the player chose is the
+   * settlement's decision too, and this does not overrule it.
+   */
+  private chooseStudy(world: World): void {
+    if (world.research.active) return;
+    let scholars = 0;
+    for (const b of world.buildings) {
+      if (!b.complete || b.defId !== 'research_hut') continue;
+      scholars += Math.min(b.def.workSlots, b.workerIds.length || b.def.workSlots);
+    }
+    if (scholars <= 0) return;
+    const open = world.research.available();
+    if (open.length === 0) return;
+    // Whatever is open and cheapest. A settlement working things out for
+    // itself gets to the next thing it can, not to the thing it most wants.
+    const next = open.reduce((a, b) => (b.cost < a.cost ? b : a));
+    world.research.start(next.id);
+    world.log.add(world.time, 'discovery', 'ev.studyBegun', { topic: next.id });
   }
 
   /** Hands available for work, weighted by how much work each is good for. */
@@ -214,14 +257,7 @@ export class Development {
       scholars += Math.min(b.def.workSlots, b.workerIds.length || b.def.workSlots);
     }
     if (scholars <= 0) return;
-    if (!world.research.active) {
-      // Whatever is open and cheapest: a settlement without a player steering
-      // it works on the next thing it can, not on the thing it most wants.
-      const open = world.research.available();
-      if (open.length === 0) return;
-      const next = open.reduce((a, b) => (b.cost < a.cost ? b : a));
-      world.research.start(next.id);
-    }
+    this.chooseStudy(world);
     world.research.contribute(scholars * 2.2 * days * world.research.effects.study);
   }
 

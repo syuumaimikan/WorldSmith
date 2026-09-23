@@ -188,6 +188,114 @@ export const ja: Record<string, string> = {
   'cmd.cheats.about': 'この世界がチートを使われたかどうかを告げる。',
   'cmd.cheats.yes': 'ある。この世界はすべてを自力で辿り着いたわけではない。',
   'cmd.cheats.no': 'ない。ここにあるものはすべて実際に起きたことだ。',
+  'hud.mods': 'MOD',
+  'mods.title': 'MOD',
+  'mods.installed': '導入済み（{count}）',
+  'mods.none': 'MODは導入されていない。',
+  'mods.note':
+    'MODはJSONファイルである。アイテム、植物、生き物、レシピ、挙動、パネルを追加でき、'
+    + '追加されたものはゲーム自身の内容と同じ表に入る——運搬人はMODの鉱石を運び、料理人はMODの材料を使う。'
+    + '無効化が反映されるのは次に生成する世界から。既に生成された世界には、そのMODが置いたものが含まれているからだ。',
+  'mods.on': '有効',
+  'mods.off': '無効',
+  'mods.remove': '削除',
+  'mods.add': 'MODを追加',
+  'mods.addNote': 'mod.jsonファイルを選ぶ。中身は使用前にすべて検証され、読めなかった箇所は実行されずに報告される。',
+  'mods.chooseFile': 'ファイルを選ぶ',
+  'mods.added': '{name}を追加した。',
+  'mods.notReadable': 'このファイルは、このゲームが読めるMODではない。',
+  'mods.tooBig': 'マニフェストとしては大きすぎるファイルだ。',
+  'mods.problems': '問題{n}件',
+  'mods.countItems': 'アイテム{n}',
+  'mods.countBlocks': '植物{n}',
+  'mods.countCreatures': '生き物{n}',
+  'mods.countRecipes': 'レシピ{n}',
+  'mods.countSystems': 'システム{n}',
+  'mods.nothingHere': '何もない。',
+  'hud.guide': 'ガイド',
+  'guide.title': 'ガイド',
+  'guide.living': 'ここで生きる',
+  'guide.gathering': '何がどこに育つか',
+  'guide.crafting': 'レシピ',
+  'guide.building': '建築',
+  'guide.world': 'この世界',
+  'guide.nothing': 'なし',
+  'guide.needs': '要：{what}',
+  'guide.skill.chop': '伐採',
+  'guide.skill.mine': '採掘',
+  'guide.skill.forage': '採集',
+  'guide.life.primeval': '花の咲く前の世界',
+  'guide.life.settled': '人が見出した世界',
+  'guide.life.late': '巨獣の去った世界',
+
+  'guide.living.who': 'あなたは何者か',
+  'guide.living.p1':
+    'あなたはここに住む一人の人間である。管理者ではない。集落は次に何を建てるか、冬に何を読むかを'
+    + '自ら決め、あなたが見ていようといまいと、そのどちらも進めていく。あなたが差し出せるのは一対の手と、'
+    + 'それで何をするかという決断だけだ。',
+  'guide.living.p2':
+    'この世界では、金を払って完成するものは一つもない。建物とは、人が資材を運び込み、手を入れる現場である。'
+    + '物資は歩く誰かが運ぶ。伐られた木は、次の木が育つまで戻らない。遅いと感じるなら、それは誰かが'
+    + '実際にやっているからだ。',
+  'guide.living.body': 'あなたの体',
+  'guide.living.p3':
+    '体力という数値は無い。あるのは体だ。手足は折れ、傷は化膿し、体調はそれらの総体から導かれる。'
+    + '薬草の湿布は、一つの傷に、一度だけ、少しだけ効く。あとは時間と食べ物の仕事である。',
+  'guide.living.p4':
+    '空腹は日の単位で、渇きは時間の単位で進む——水無しの三日は、食無しの一月より先に決着をつける。'
+    + '真水は飲めるが海水は飲めない。多くの食べ物は水分を含む。砂漠で果実がカロリー以上の価値を持つのは'
+    + 'そのためだ。',
+  'guide.living.hands': 'あなたの手',
+  'guide.living.p5':
+    '手に持てるものは一度に一つ。道具は、実際に手に出ている間だけ仕事を速める。投げたものはアイテム'
+    + 'そのものであり、現実の弧を描き、落ちた先に同じアイテムとして転がっている。',
+  'guide.key.interact': '話す・拾う・渡す・保管庫を開く',
+  'guide.key.use': '手の中のものを使う——食べる、当てる',
+  'guide.key.place': '目の前に置く',
+  'guide.key.throw': '見ている方向へ投げる',
+  'guide.key.drink': '手の届く水を飲む',
+  'guide.key.hands': 'その持ち物欄を手に取る',
+  'guide.key.console': 'コンソール',
+
+  'guide.gathering.p1':
+    'どこに何が育つかは、その土地が何であるかが決める——気温、降水、そして下の岩。'
+    + '土地の寒さに耐えられない種は「まばらに生える」のではない。そこには居らず、別の何かがその場所を'
+    + '占めている。',
+  'guide.gathering.p2':
+    '以下の一覧は、この世界を生成したのと同じ表から読み出している。つまり、実際にそこにある。'
+    + '鉱石だけは別で、岩が置いた場所にある。掘る前に地図の地質層を見る価値があるのはそのためだ。',
+  'guide.gathering.mapHint': '世界地図（M）の「資源」層に、発見済みのものが記される。',
+
+  'guide.crafting.p1':
+    '全レシピと、それを作る場所と、必要なもの。灰色の行は何かを先に学ぶ必要がある。'
+    + '数字は必要な作業量であり、作業台に立つ時間を決めるのはこれである。',
+  'guide.building.p1':
+    '各建物の費用——現場まで運ばねばならない資材と、そこで積まねばならない作業。買えるものは一つも無い。',
+
+  'guide.world.thisOne': 'この世界',
+  'guide.world.era': '時代',
+  'guide.world.mode': 'モード',
+  'guide.world.size': '広さ',
+  'guide.world.life': '生命',
+  'guide.world.seed': 'シード',
+  'guide.world.everything': '世界に在るもの',
+  'guide.world.carried': '食べられるもの',
+  'guide.count.items': 'アイテム',
+  'guide.count.blocks': '植物・樹木・鉱石',
+  'guide.count.recipes': 'レシピ',
+  'guide.count.buildings': '建物',
+  'guide.count.research': '解き明かせること',
+  'guide.world.p1':
+    '世界には時代があり、そしてその後も時代を持ち続ける。あなたがどの時代に降り立とうと、'
+    + 'ここの民は学び、増え、争い、崩れていく。十分な時間があれば、この世界は始まった時代の先へ'
+    + '到達しうる——あるいは到達しない。自らを引き裂いた国は、物を忘れるからだ。',
+  'guide.world.p2':
+    '大地は書き割りではない。プレートは動き、断層は歪みを溜め、石灰岩は畑の下で溶け続け、'
+    + '火山はサイコロの出目ではなくマグマのある場所に立っている。何かが起きたなら、'
+    + 'その理由はすでに世界の中にあった。',
+  'guide.world.p3':
+    '年代記は実際に起きたことを記録する。コンソールコマンドが使われたかどうかも含めて。'
+    + '歴史は、それが実際に起きたときにだけ読む価値があるからだ。',
   'hud.condition': '体調',
   'hud.hunger': '食料',
   'hud.thirst': '水分',
@@ -541,7 +649,7 @@ export const ja: Record<string, string> = {
     + 'E 対話/操作 · F 使う・食べる · X 置く · Y 投げる · H 水を飲む\n'
     + 'B 建築 · Tab 所持品 · M 地図 · V カメラ · 1〜6 手に持つ\n'
     + 'C 集落 · J 仕事 · P 生産 · T 研究 · O オーバーレイ · L 国家\n'
-    + '/ コンソール · G ゴッドモード · ` 一時停止 · [ ] 速度変更 · F1 デバッグ',
+    + '/ コンソール · G ゴッドモード · ` 一時停止 · [ ] 速度変更 · F1 ガイド · F2 デバッグ',
 
   // ------------------------------------------------------------- actions
   'action.moveForward': '前進',
@@ -853,6 +961,7 @@ export const ja: Record<string, string> = {
   'event.fireOut': '火は燃え尽きた。',
   'event.flood': '川が堤を越えた。',
   'event.floodOver': '水が引きはじめた。',
+  'ev.studyBegun': '学舎は新たな問いに取りかかった。',
   'ev.cheatsUsed': 'この世界が自力では起こさなかったことが、ここで起きた。',
   'ev.modeChanged': 'この世界の規則が{mode}へ変更された。',
   'ev.bornSubject': 'この谷はすでに{nation}のものであり、今朝からは、あなたもまたそうである。',

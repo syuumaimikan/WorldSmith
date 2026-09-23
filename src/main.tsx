@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import './app/styles.css';
 import { initLocale } from './i18n';
+import { loadMods } from './mods/load';
 
 initLocale();
 
@@ -26,8 +27,15 @@ window.addEventListener('contextmenu', (e) => {
   e.preventDefault();
 });
 
-createRoot(el).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// Mods go in before anything draws, because the content tables they add to
+// are what world generation reads. A mod that failed to load is a mod that is
+// not there; it must not stop the game from starting.
+void loadMods()
+  .catch((err) => console.warn('[WorldSmith] mods failed to load', err))
+  .finally(() => {
+    createRoot(el).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  });

@@ -137,6 +137,8 @@ export interface SaveData {
   jobs: SavedJob[];
   events: WorldEvent[];
   research: { unlocked: string[]; active: string | null; progress: number; points: number };
+  /** What the mods remembered. Numbers only, and clamped on the way back in. */
+  modCounters?: Record<string, number>;
   settlement: Record<string, unknown>;
   weather: Record<string, unknown>;
   climate: Record<string, unknown>;

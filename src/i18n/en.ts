@@ -185,6 +185,121 @@ export const en: Record<string, string> = {
   'cmd.cheats.about': 'Says whether this world has had cheats used on it.',
   'cmd.cheats.yes': 'Yes. This world did not get here entirely on its own.',
   'cmd.cheats.no': 'No. Everything here happened.',
+  'hud.mods': 'Mods',
+  'mods.title': 'Mods',
+  'mods.installed': 'Installed ({count})',
+  'mods.none': 'No mods are installed.',
+  'mods.note':
+    'A mod is a JSON file. It can add items, plants, creatures, recipes, behaviour and panels, '
+    + 'and everything it adds goes into the same tables the game\u2019s own content lives in \u2014 a porter '
+    + 'will haul a modded ore and a cook will use a modded ingredient. Switching one off takes effect '
+    + 'on the next world, because a world already generated contains what the mod put in it.',
+  'mods.on': 'On',
+  'mods.off': 'Off',
+  'mods.remove': 'Remove',
+  'mods.add': 'Add a mod',
+  'mods.addNote': 'Choose a mod.json file. It is checked before anything in it is used, and whatever cannot be read is reported rather than run.',
+  'mods.chooseFile': 'Choose a file',
+  'mods.added': 'Added {name}.',
+  'mods.notReadable': 'That file is not a mod this game can read.',
+  'mods.tooBig': 'That file is far larger than a manifest should be.',
+  'mods.problems': '{n} problems',
+  'mods.countItems': '{n} items',
+  'mods.countBlocks': '{n} plants',
+  'mods.countCreatures': '{n} creatures',
+  'mods.countRecipes': '{n} recipes',
+  'mods.countSystems': '{n} systems',
+  'mods.nothingHere': 'Nothing.',
+  'hud.guide': 'Guide',
+  'guide.title': 'Guide',
+  'guide.living': 'Living here',
+  'guide.gathering': 'What grows where',
+  'guide.crafting': 'Recipes',
+  'guide.building': 'Building',
+  'guide.world': 'This world',
+  'guide.nothing': 'Nothing',
+  'guide.needs': 'needs {what}',
+  'guide.skill.chop': 'Chopped',
+  'guide.skill.mine': 'Mined',
+  'guide.skill.forage': 'Foraged',
+  'guide.life.primeval': 'Before flowering plants',
+  'guide.life.settled': 'The world people found',
+  'guide.life.late': 'After the great beasts',
+
+  'guide.living.who': 'Who you are',
+  'guide.living.p1':
+    'You are one person living here. Not the management: the settlement decides for itself what to '
+    + 'raise next and what to spend the winter reading, and it will get on with both whether or not '
+    + 'you are paying attention. What you contribute is a pair of hands and whatever you decide to do '
+    + 'with them.',
+  'guide.living.p2':
+    'Nothing in this world is finished by paying for it. A building is a site that people carry '
+    + 'materials to and work on; goods are carried by somebody who walks; a tree that is felled is '
+    + 'gone until another one grows. If something looks slow, it is because somebody is doing it.',
+  'guide.living.body': 'Your body',
+  'guide.living.p3':
+    'There are no hit points. There is a body, with limbs that break, wounds that turn, and a '
+    + 'condition that is worked out from what is wrong with it. A poultice helps a little, once, with '
+    + 'one thing. Time and food do the rest.',
+  'guide.living.p4':
+    'Hunger runs on a clock of days and thirst on a clock of hours — three days without water will '
+    + 'finish you long before a month without food. Fresh water is drinkable and the sea is not. Most '
+    + 'food is partly water, which is why fruit is worth more in a desert than its calories say.',
+  'guide.living.hands': 'Your hands',
+  'guide.living.p5':
+    'One thing is in your hand at a time, and a tool only speeds work while it is actually out. What '
+    + 'you throw is the item itself, on a real arc, and it is the same item lying on the ground where '
+    + 'it lands.',
+  'guide.key.interact': 'Talk, pick up, deliver, open a storehouse',
+  'guide.key.use': 'Use what is in your hand — eat it, apply it',
+  'guide.key.place': 'Put it down in front of you',
+  'guide.key.throw': 'Throw it where you are looking',
+  'guide.key.drink': 'Drink from water within reach',
+  'guide.key.hands': 'Take that pack slot into your hand',
+  'guide.key.console': 'Console',
+
+  'guide.gathering.p1':
+    'What grows somewhere is decided by what that ground is: its temperature, its rainfall, and the '
+    + 'rock under it. A species that cannot stand the local cold is not thin on the ground there — it '
+    + 'is absent, and something else has the space.',
+  'guide.gathering.p2':
+    'The lists below are read from the same tables the world was generated from, so they are where '
+    + 'things actually are. Ore is different: it is where the rock put it, which is why the map has a '
+    + 'geology layer worth reading before you dig.',
+  'guide.gathering.mapHint': 'The world map has a resources layer (M, then Resources) that marks what has been found.',
+
+  'guide.crafting.p1':
+    'Every recipe, where it is made, and what it costs. A greyed line needs something learned first. '
+    + 'The number is the work it takes, which is what decides how long somebody stands at the bench.',
+  'guide.building.p1':
+    'What every building costs, in materials that have to be carried to the site and work that has to '
+    + 'be done on it. Nothing here can be bought.',
+
+  'guide.world.thisOne': 'This world',
+  'guide.world.era': 'Age',
+  'guide.world.mode': 'Mode',
+  'guide.world.size': 'Size',
+  'guide.world.life': 'Life',
+  'guide.world.seed': 'Seed',
+  'guide.world.everything': 'Everything in it',
+  'guide.world.carried': 'What is worth eating',
+  'guide.count.items': 'Items',
+  'guide.count.blocks': 'Plants, trees and ore',
+  'guide.count.recipes': 'Recipes',
+  'guide.count.buildings': 'Buildings',
+  'guide.count.research': 'Things that can be worked out',
+  'guide.world.p1':
+    'The world has an age, and it goes on having one. Whatever age you arrived in, the peoples here '
+    + 'keep learning, growing, falling out and falling apart, and in enough time this world can reach '
+    + 'an age past the one it started in — or fail to, because a country that tears itself apart '
+    + 'forgets things.',
+  'guide.world.p2':
+    'The ground is not scenery. Plates are moving, faults are loading, limestone is dissolving under '
+    + 'fields that will one day not be there, and volcanoes stand where the melt is rather than where '
+    + 'a die said. When something happens it happened for a reason that was already in the world.',
+  'guide.world.p3':
+    'The chronicle records what actually occurred, including whether a console command was used, '
+    + 'because a history is only worth reading if it happened.',
   'hud.condition': 'Condition',
   'hud.hunger': 'Food',
   'hud.thirst': 'Water',
@@ -541,7 +656,7 @@ export const en: Record<string, string> = {
     + 'E interact · F use or eat · X put down · Y throw · H drink\n'
     + 'B build · Tab pack · M map · V camera · 1\u20136 take in hand\n'
     + 'C settlement · J work · P production · T research · O overlay · L nations\n'
-    + '/ console · G god mode · ` pause · [ and ] change speed · F1 debug',
+    + '/ console · G god mode · ` pause · [ and ] change speed · F1 guide · F2 debug',
 
   // ------------------------------------------------------------- actions
   'action.moveForward': 'Move forward',
@@ -859,6 +974,7 @@ export const en: Record<string, string> = {
   'event.fireOut': 'The fires have burned themselves out.',
   'event.flood': 'The river bursts its banks.',
   'event.floodOver': 'The floodwater is going down.',
+  'ev.studyBegun': 'The study turns to a new question.',
   'ev.cheatsUsed': 'Something happened here that the world would not have done on its own.',
   'ev.modeChanged': 'The rules of this world were changed to {mode}.',
   'ev.bornSubject': 'This valley is already {nation}’s, and so, from this morning, are you.',

@@ -76,7 +76,10 @@ function subscribe(fn: () => void): () => void {
  */
 export function t(key: string, params?: Record<string, string | number>): string {
   const dict = DICTIONARIES[current];
-  let value = dict[key] ?? en[key] ?? key;
+  // A mod's own strings, looked up after the game's so a mod cannot silently
+  // redefine anything the game says about itself.
+  const modded = dict[key] === undefined && en[key] === undefined ? modString(key) : undefined;
+  let value = dict[key] ?? en[key] ?? modded ?? key;
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
@@ -87,7 +90,29 @@ export function t(key: string, params?: Record<string, string | number>): string
 
 /** True when a key exists in the active dictionary or in English. */
 export function hasKey(key: string): boolean {
-  return DICTIONARIES[current][key] !== undefined || en[key] !== undefined;
+  return (
+    DICTIONARIES[current][key] !== undefined ||
+    en[key] !== undefined ||
+    modString(key) !== undefined
+  );
+}
+
+/**
+ * A string a mod supplied.
+ *
+ * Registered rather than imported, so that the dictionary does not depend on
+ * the mod layer and the tests can run without one. Everything in here is text
+ * from a file somebody else wrote; it is substituted into `{name}` slots and
+ * rendered as text, never as markup.
+ */
+const modStrings = new Map<string, Map<string, string>>();
+
+export function registerModStrings(locale: string, table: Map<string, string>): void {
+  modStrings.set(locale, table);
+}
+
+function modString(key: string): string | undefined {
+  return modStrings.get(current)?.get(key) ?? modStrings.get('en')?.get(key);
 }
 
 /**

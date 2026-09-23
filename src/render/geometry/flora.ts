@@ -151,6 +151,18 @@ function variantRng(kind: string, variant: number): Rng {
   return new Rng(`${kind}:${variant}`);
 }
 
+/**
+ * What a modded plant or rock looks like.
+ *
+ * A mod cannot ship geometry -- it ships JSON -- so it chooses one of the
+ * shapes the game already knows how to build and a colour to build it in.
+ * Filled in by the mod registry when a mod is applied.
+ */
+export const MOD_LOOKS = new Map<
+  string,
+  { shape: 'tree' | 'conifer' | 'bush' | 'rock' | 'ore' | 'crystal'; color: number }
+>();
+
 export function buildFloraGeometry(
   kind: ResourceKind,
   variant: number,
@@ -161,6 +173,37 @@ export function buildFloraGeometry(
   const b = new GeoBuilder();
   const rng = variantRng(kind, variant);
   const sc = seasonColors(season, cold);
+
+  const look = MOD_LOOKS.get(kind);
+  if (look) {
+    // The mod's colour replaces the season's foliage, so an emberwood is red
+    // in spring as well as autumn, which is the point of it being emberwood.
+    const tinted: SeasonColors = { ...sc, broadleaf: look.color, broadleafAlt: look.color, conifer: look.color, bush: look.color };
+    switch (look.shape) {
+      case 'tree':
+        buildBroadleaf(b, rng, lod, tinted, 1);
+        break;
+      case 'conifer':
+        buildConifer(b, rng, lod, tinted);
+        break;
+      case 'bush':
+        buildBush(b, rng, lod, tinted, false);
+        break;
+      case 'rock':
+        buildRock(b, rng, lod, tinted, 1);
+        break;
+      case 'ore':
+        buildOre(b, rng, lod, tinted, look.color);
+        break;
+      case 'crystal':
+        buildGlassyRock(b, rng, lod, tinted);
+        break;
+      default:
+        break;
+    }
+    if (b.isEmpty()) b.box(0.3, 0.6, 0.3, look.color, { y: 0.3 });
+    return b.build();
+  }
 
   switch (kind) {
     case 'oak':

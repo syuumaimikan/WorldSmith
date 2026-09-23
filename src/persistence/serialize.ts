@@ -62,6 +62,7 @@ export function serializeWorld(world: World, id: string): SaveData {
     jobs: world.serializeJobs(),
     events: world.log.serialize(),
     research: world.research.serialize(),
+    modCounters: world.modCounters.serialize(),
     settlement: world.settlement.serialize(),
     weather: world.weather.serialize(),
     climate: world.climate.serialize(),
@@ -153,6 +154,7 @@ export function deserializeWorld(data: SaveData): World {
   world.deserializeNpcs(data.npcs ?? []);
   world.deserializeJobs(data.jobs ?? []);
   world.research.restore(data.research);
+  world.modCounters.restore(data.modCounters);
   world.settlement.restore(data.settlement);
   world.weather.restore(data.weather);
   world.climate.restore(data.climate);

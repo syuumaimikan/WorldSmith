@@ -1,0 +1,157 @@
+{
+  "id": "emberwood",
+  "name": "Emberwood",
+  "version": "1.0.0",
+  "author": "WorldSmith",
+  "description": "A worked example that uses every part of the mod system: an item, a plant, a creature, a recipe, behaviour and a panel. Turn it off if you would rather this world did not have emberwood in it.",
+  "gameVersion": "8",
+
+  "items": [
+    {
+      "id": "ember_sap",
+      "name": "Ember Sap",
+      "category": "raw",
+      "stackSize": 12,
+      "weight": 1.5,
+      "value": 22,
+      "color": 16086320,
+      "description": "Resin from an emberwood, still warm. It holds a fire far longer than it has any right to."
+    },
+    {
+      "id": "ember_lamp",
+      "name": "Ember Lamp",
+      "category": "good",
+      "stackSize": 4,
+      "weight": 3,
+      "value": 90,
+      "color": 15642432,
+      "description": "Sap sealed in a turned wooden case. It will light a room for a winter."
+    },
+    {
+      "id": "ash_moth_wing",
+      "name": "Ash-moth Wing",
+      "category": "raw",
+      "stackSize": 20,
+      "weight": 0.05,
+      "value": 8,
+      "color": 12106930,
+      "description": "Grey, and finer than any cloth anyone here knows how to weave."
+    }
+  ],
+
+  "blocks": [
+    {
+      "id": "emberwood_tree",
+      "name": "Emberwood",
+      "category": "tree",
+      "skill": "chop",
+      "yields": [
+        { "item": "core:log", "amount": 1 },
+        { "item": "ember_sap", "amount": 2 }
+      ],
+      "workPerUnit": 16,
+      "units": 4,
+      "regrowDays": -1,
+      "radius": 1.3,
+      "blocks": true,
+      "spreads": true,
+      "biomes": { "temperate_forest": 5, "dense_forest": 7, "taiga": 3 },
+      "look": { "shape": "tree", "color": 14705216 }
+    }
+  ],
+
+  "creatures": [
+    {
+      "id": "ash_moth",
+      "name": "Ash-moth",
+      "build": "flyer",
+      "life": ["settled", "late"],
+      "diet": "scavenger",
+      "speed": 2.6,
+      "fleeSpeed": 7,
+      "awareness": 20,
+      "yields": [{ "item": "ash_moth_wing", "amount": 2 }],
+      "biomes": ["temperate_forest", "dense_forest", "taiga"],
+      "color": 10132132,
+      "bellyColor": 13948124,
+      "size": 0.3,
+      "herdSize": [2, 6],
+      "density": 18,
+      "lifespan": [1, 3]
+    }
+  ],
+
+  "recipes": [
+    {
+      "id": "ember_lamp_craft",
+      "name": "Ember Lamp",
+      "building": "carpenter",
+      "inputs": [
+        { "item": "ember_sap", "amount": 3 },
+        { "item": "core:plank", "amount": 1 }
+      ],
+      "outputs": [{ "item": "ember_lamp", "amount": 1 }],
+      "work": 40
+    }
+  ],
+
+  "systems": [
+    {
+      "id": "sap_runs_in_spring",
+      "when": { "on": "season", "season": "spring" },
+      "then": [
+        { "do": "log", "key": "sapRuns", "notable": true },
+        { "do": "addCounter", "counter": "springs", "amount": 1 }
+      ]
+    },
+    {
+      "id": "moths_come_to_the_sap",
+      "when": { "on": "harvest", "block": "emberwood_tree" },
+      "chance": 0.25,
+      "then": [
+        { "do": "spawnCreature", "creature": "ash_moth", "count": 3, "radius": 14 },
+        { "do": "addCounter", "counter": "sap_taken", "amount": 1 }
+      ]
+    },
+    {
+      "id": "the_grove_answers",
+      "when": { "on": "year" },
+      "requires": { "counter": "sap_taken", "atLeast": 12 },
+      "then": [
+        { "do": "log", "key": "groveAnswers", "notable": true },
+        { "do": "spawnBlock", "block": "emberwood_tree", "count": 4, "radius": 60 },
+        { "do": "setCounter", "counter": "sap_taken", "value": 0 }
+      ]
+    }
+  ],
+
+  "ui": [
+    {
+      "id": "grove",
+      "title": "The Emberwood",
+      "widgets": [
+        { "kind": "heading", "text": "What the grove is owed" },
+        {
+          "kind": "text",
+          "text": "Emberwood gives its sap freely and remembers being cut. Take twelve trees' worth in a year and something in the wood answers."
+        },
+        { "kind": "bar", "label": "Sap taken this year", "counter": "sap_taken", "max": 12 },
+        { "kind": "counter", "label": "Springs seen", "counter": "springs" },
+        { "kind": "itemCount", "label": "Ember sap in your pack", "item": "ember_sap" },
+        { "kind": "itemCount", "label": "Ember lamps", "item": "ember_lamp" },
+        { "kind": "list", "label": "What this mod added", "source": "items" }
+      ]
+    }
+  ],
+
+  "strings": {
+    "en": {
+      "sapRuns": "The emberwoods are running. The sap is warm to the touch.",
+      "groveAnswers": "Something in the emberwood has been counting. Four new trees stand where none did yesterday."
+    },
+    "ja": {
+      "sapRuns": "燃木の樹液が動き出した。触れるとまだ温かい。",
+      "groveAnswers": "燃木の森は数えていた。昨日まで何も無かった場所に、四本の若木が立っている。"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "comment": "Every mod the game should look for at startup. Add a folder under public/mods/ and put its name here.",
+  "mods": ["emberwood"]
+}

@@ -140,7 +140,8 @@ export class VegetationRenderer {
       if (d2 > r2) continue;
 
       const lod: Lod = d2 < r0 ? 0 : d2 < r1 ? 1 : 2;
-      const variant = lod === 0 ? n.variant % VARIANT_COUNT[n.kind] : 0;
+      // A modded kind has no entry here, so it gets the usual two variants.
+      const variant = lod === 0 ? n.variant % (VARIANT_COUNT[n.kind] ?? 2) : 0;
       const bucket = this.bucketFor(n.kind, variant, lod);
 
       if (bucket.count >= bucket.capacity) this.growBucket(bucket);

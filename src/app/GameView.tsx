@@ -19,6 +19,8 @@ import { PausePanel } from './panels/PausePanel';
 import { TimeSkipPanel } from './panels/TimeSkipPanel';
 import { StorePanel } from './panels/StorePanel';
 import { ConsolePanel } from './panels/ConsolePanel';
+import { ModsPanel } from './panels/ModsPanel';
+import { GuidePanel } from './panels/GuidePanel';
 import { storeInReach } from '../game/PlayerActions';
 import { autosaveWorld, newSaveId, saveWorld } from '../persistence/saves';
 import { loadBindings } from '../persistence/settings';
@@ -48,6 +50,8 @@ const MODAL_PANELS: PanelId[] = [
   'skip',
   'store',
   'console',
+  'mods',
+  'guide',
   'menu',
 ];
 
@@ -181,6 +185,10 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
           break;
         case 'F1':
           e.preventDefault();
+          togglePanel('guide');
+          break;
+        case 'F2':
+          e.preventDefault();
           setShowDebug((v) => !v);
           break;
         case 'KeyG':
@@ -260,6 +268,8 @@ export function GameView({ world, settings, onSettingsChange, onExit, saveId }: 
           {panel === 'chronicle' && <ChroniclePanel game={game} onClose={closePanel} />}
           {panel === 'skip' && <TimeSkipPanel game={game} onClose={closePanel} />}
           {panel === 'console' && <ConsolePanel game={game} onClose={closePanel} />}
+          {panel === 'mods' && <ModsPanel game={game} onClose={closePanel} />}
+          {panel === 'guide' && <GuidePanel game={game} onClose={closePanel} />}
           {panel === 'store' && storeInReach(game.world) && (
             <StorePanel game={game} building={storeInReach(game.world)!} onClose={closePanel} />
           )}
